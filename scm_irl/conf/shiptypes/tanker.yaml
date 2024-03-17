@@ -1,0 +1,7 @@
+name: tanker
+env:
+  id: 1
+  priority: 1
+  capacity: 1000
+  max_speed: 10
+
