@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import json
 import pickle
+from shapely.geometry import Polygon
 import sllib.parsers.ais_scenario as ais_scenario
 from sllib.datatypes.vessel import VesselState
 from sllib.conversions.geo_conversions import lat_lon_to_north_east
@@ -14,6 +15,7 @@ class Scenario:
         self._load_metadata(self.scenario_path)
         self._load_states(self.scenario_path)
         self._compute_vessel_relative_neighbor_states()
+        self.depth_lands_polygons = self.scenario_depth_lands_polygons()
 
     def _load_metadata(self, scenario_path):
         metadata_path = os.path.join(scenario_path, "metadata.json")
@@ -48,6 +50,10 @@ class Scenario:
                 if neighbor_mmsi != mmsi:
                     self.vessels[mmsi]["relative_neighbor_states"][neighbor_mmsi] = self.get_vessel_relative_neighbor_states(mmsi, neighbor_mmsi)
 
+    
+    def is_vessel_active(self, mmsi, time):
+        states = self.get_vessel_states(mmsi)
+        return time in states
 
     def get_vessel(self, mmsi):
         return self.vessels[mmsi]
@@ -149,9 +155,17 @@ class Scenario:
         return depth_polygons
     
 
+    def scenario_depth_lands_polygons(self):
+        lands = self.scenario_to_lands_north_east()
+        depths = self.scenario_to_depths_north_east()
+        depths_lands = [(Polygon([(x[1], x[0]) for x in depth[0]]), depth[1]) for depth in depths] + [(Polygon([(x[1], x[0]) for x in land]), 0) for land in lands]
+        return depths_lands
 
 
-  
+        
+
+
+ 
 
         
         

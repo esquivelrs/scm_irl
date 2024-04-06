@@ -81,3 +81,45 @@ Topics & next steps
 * Create Land/Depth observation relative to the agent
 * Create trajectory metric.
 
+---
+## Week 12 - 19-03-2024:
+
+* Create Land/Depth observation relative to the agent
+Scenario 5 meters per pixel.
+Transformation:
+![alt width:250px](image-4.png) ![alt  width:250px](image-5.png)![alt  width:250px](image-6.png) ![alt width:250px](image-7.png)
+
+---
+
+#### Next steps
+* Create trajectory metric.
+* Start the implementation of IRL 
+
+Comments: 
+* along track error
+* cross track error
+* tracking the frames
+
+---
+## Week 14 - 02-04-2024:
+
+Croping using polygons and then conver to matrix, filling missing areas with nearest pixel value:
+![alt width:350px](image-9.png) ![alt width:350px](image-10.png)![alt  width:350px](image-11.png)
+
+
+---
+### Pygame representation:
+
+Renderization with pygame:
+![alt center width:450px](shipping_pygame.gif)
+
+--- 
+
+#### Next steps
+* Fix aspect ratio, some scenarios are not square
+* Reading material:
+    * DAgger: https://arxiv.org/pdf/1011.0686.pdf
+    * IRL without RL: https://arxiv.org/pdf/2303.14623.pdf
+    * Situational Awareness: https://backend.orbit.dtu.dk/ws/files/338331238/PhD_thesis_260_sider_-_76_farvede.pdf
+* Create trajectory metric. **
+* Start the implementation of IRL **
