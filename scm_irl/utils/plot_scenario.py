@@ -9,6 +9,7 @@ from matplotlib.colors import LinearSegmentedColormap
 
 
 
+
 def plot_cropbox_area(depths_lands_inside, crop_box, env, color='blue'):
     
     for depth in depths_lands_inside:
@@ -72,9 +73,59 @@ def apply_cmap(matrix, cmap):
 
     return matrix_rgb
 
-def create_color_map():
+def create_color_map(nodes_file=None):
     color = (30, 144, 255)  # RGB for 'dodgerblue'
     colors = [(69, 137, 0)]  # RGB for 'green'
     for i in range(1, 256):
         colors.append((color[0], color[1] * (1 - i / 255), color[2] * (1 - i / 255)))
     return colors
+
+
+from matplotlib.colors import Normalize
+
+def plot_scenario_lat_lon(depths_lands_lat_lon, lat_limits, lon_limits):
+    cmap = cmap_seachart()
+    norm = Normalize(vmin=0, vmax=100)  # Assumes depths are in the range [0, 100]
+
+    for depth in depths_lands_lat_lon:
+        color = cmap(depth[1]/100)
+        polygon = patches.Polygon([(x[0], x[1]) for x in depth[0].exterior.coords], fill=True, color=color)
+        plt.gca().add_patch(polygon)
+
+    # Set the axes limits to fit the plot
+    plt.xlim(lon_limits[0], lon_limits[1])
+    plt.ylim(lat_limits[0], lat_limits[1])
+
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    return plt
+
+def plot_trajectory_lat_lon(trajectory, lat_limits, lon_limits):
+    plt.plot([x[1] for x in trajectory], [x[0] for x in trajectory])
+    plt.xlim(lon_limits[0], lon_limits[1])
+    plt.ylim(lat_limits[0], lat_limits[1])
+    plt.gca().set_aspect('equal', adjustable='box')
+    return plt
+
+def plot_scenario_elements(ways, nodes):
+    # plot each way
+    for way in ways:
+        # Get the x and y coordinates of the nodes
+        x = [float(node.lon) for node in way.nodes]
+        y = [float(node.lat) for node in way.nodes]
+
+        # Plot the way
+        plt.plot(x, y, 'y-')
+
+    for node in nodes:
+        # Get the x and y coordinates of the node
+        x = float(node.lon)
+        y = float(node.lat)
+
+        #print(x, y)
+        if node.tags.get('seamark:type') is not None:
+            plt.plot(x, y, 'm+')
+        else:
+            plt.plot(x, y, 'r*')
+    
+    return plt

@@ -123,3 +123,39 @@ Renderization with pygame:
     * Situational Awareness: https://backend.orbit.dtu.dk/ws/files/338331238/PhD_thesis_260_sider_-_76_farvede.pdf
 * Create trajectory metric. **
 * Start the implementation of IRL **
+
+---
+
+## Week 16 - 16-04-2024:
+
+* Observation matrix bug --> the polygons were not property rotated.
+* sllib bug lat-long (scenario_to_vessel_states_and_lands_north_east).
+* Reading material - GAIL: https://arxiv.org/pdf/1606.03476.pdf
+
+* Report: https://www.overleaf.com/project/6605419761cb289c0b4f724a
+
+![center width:450px](image-13.png)
+
+---
+Follow established maritime routes:
+![alt width:350px](image-15.png)![alt width:670px](image-16.png)
+
+
+---
+
+## Week 19 - 07-05-2024:
+
+![center](image-17.png)
+
+---
+## overpy
+`api = overpy.Overpass()`
+
+![center width:950px](image-19.png)
+
+---
+
+Next steps:
+- Use the overpy data (nodes and ways) directly in the observation matrix
+- Handle the ships as a fixed list.
+- Reading material - AIRL: https://arxiv.org/pdf/1710.11248
