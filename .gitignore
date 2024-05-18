@@ -109,3 +109,7 @@ data/processed/*
 *.pkl
 *.zip
 
+
+# wandb
+wandb/
+notebooks/wandb/*
