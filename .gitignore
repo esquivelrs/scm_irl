@@ -113,3 +113,6 @@ data/processed/*
 # wandb
 wandb/
 notebooks/wandb/*
+notebooks/runs/*
+notebooks/videos/*
+
