@@ -159,3 +159,21 @@ Next steps:
 - Use the overpy data (nodes and ways) directly in the observation matrix
 - Handle the ships as a fixed list.
 - Reading material - AIRL: https://arxiv.org/pdf/1710.11248
+
+
+---
+## Week 20 - 14-05-2024:
+
+PPO StableBaselines3 RL execution:
+Reward: `-distance_position -cog_diff -sog_diff`
+<div style="display: flex; justify-content: center;">
+    <video controls src="Screencast 2024-05-14 09:13:11.mp4" title="Title"></video>
+</div>
+
+---
+## Next steps:
+- Add ways to observation matrix.
+- Add scenario handler.
+- Add imitation framework.
+- Add wandb.
+- Reading material - AIRL: https://arxiv.org/pdf/1710.11248

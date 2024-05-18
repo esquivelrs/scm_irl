@@ -107,4 +107,5 @@ data/processed/*
 *.json
 *.pickle
 *.pkl
+*.zip
 
