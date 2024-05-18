@@ -21,7 +21,8 @@ Inverse rl applied to navigation of marine autonomous robots
 
 
 ```batch
-
+    $ conda create -n scm python=3.11.8
+    $ conda activate scm
     $ pip install scm_irl
 ```
 
