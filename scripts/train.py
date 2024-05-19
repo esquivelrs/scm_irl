@@ -30,9 +30,10 @@ def make_env(env_id, rank, seed=0):
         return env
     return _init
 
+
 config = {
     "policy": 'MultiInputPolicy',
-    "total_timesteps": 100000,
+    "total_timesteps": 400000,
     "env_name": "ScmIrl-v0",
 }
 
