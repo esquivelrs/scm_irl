@@ -117,3 +117,4 @@ notebooks/videos/*
 scripts/wandb/*
 scripts/runs/*
 scripts/videos/*
+outputs/*

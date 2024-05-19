@@ -19,11 +19,17 @@ Inverse rl applied to navigation of marine autonomous robots
 
 ## Installation
 
+prerequisites:
+```bash
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+Intall:
 
 ```batch
-    $ conda create -n scm python=3.11.8
-    $ conda activate scm
-    $ pip install scm_irl
+conda create -n scm python=3.11.8
+conda activate scm
+pip install scm_irl
 ```
 
 This is the preferred method to install scm_irl, as it will always

@@ -198,7 +198,7 @@ class ScmIrlEnv(gym.Env):
         cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
-        reward = distance/10 + 10 * cog_diff + sog_diff
+        reward = distance/100 + 10 * cog_diff + sog_diff
         if np.isnan(reward):
             print(f"distance: {distance}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
             reward = 1000000
