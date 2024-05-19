@@ -19,7 +19,7 @@ gym.register(
 
 def make_env():
     #env = gym.make("CartPole-v1", render_mode="rgb_array")
-    path = "/home/rolando/Documents/DTU/SCMarine/ais-and-charts-sample/ais_data/scenario_2a66ceaf61"
+    path = "/zhome/11/1/193832/resquivel/scm_irl/data/raw/scenario_2a66ceaf61"
     env = ScmIrlEnv(path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
     env = gym.wrappers.RecordVideo(env, f"videos")  # record videos
     env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
@@ -27,7 +27,7 @@ def make_env():
 
 config = {
     "policy": 'MultiInputPolicy',
-    "total_timesteps": 100000,
+    "total_timesteps": 400000,
     "env_name": "ScmIrl-v0",
 }
 
