@@ -22,7 +22,7 @@ Links:
 
 from setuptools import setup, find_packages
 
-requirements = ['Click>=6.0', 'numpy', 'gymnasium', 'matplotlib', 'scipy', 'pandas', 'seaborn', 
+requirements = ['Click>=6.0', 'numpy', 'gymnasium', 'matplotlib', 'scipy', 'pandas', 'seaborn', 'torch==2.1.1' 
                 'pygame', 'shapely', 'rasterio', 'opencv-python', 'overpy', "imitation", "wandb", "moviepy"]
 
 setup_requirements = [ ]
