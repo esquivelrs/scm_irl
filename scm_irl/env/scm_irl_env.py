@@ -109,6 +109,7 @@ class ScmIrlEnv(gym.Env):
         self.observation_space = spaces.Dict({
             'observation_matrix': spaces.Box(low=-100, high=100, shape=self.observation_matrix.shape, dtype=np.float32),
             'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+            'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
             'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
         })
 
@@ -178,8 +179,12 @@ class ScmIrlEnv(gym.Env):
             self.observation_matrix = observation_matrix
 
         agent_obs = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
+        
+        expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
+        expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog, expert_state.cog])
         obs = {'observation_matrix': self.observation_matrix,
                 'agent_state': agent_obs, 
+                'expert_state': expert_obs,
                 'target': self.agent_final_location}
 
         terminate = False
@@ -193,17 +198,20 @@ class ScmIrlEnv(gym.Env):
         # compute the 
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         # compute the distance between the expert and the agent
-        distance = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
+        pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
+        #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
         cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
-        cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
+        #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
-        reward = distance/100 + 10 * cog_diff + sog_diff
+        reward = np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
+        #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
         if np.isnan(reward):
-            print(f"distance: {distance}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
-            reward = 1000000
+            reward = -1
+            
 
         return reward
+    
 
     def step(self, action):
         # print(f"timestep: {self.timestep}, action: {action}")
@@ -224,7 +232,7 @@ class ScmIrlEnv(gym.Env):
             self.truncated = False
             self.terminate = True
             print("agent out of the scenario")
-            self.reward -= 1000000
+            self.reward = -1
         elif self.timestep >= self.end_time:
             self.truncated = True
             self.terminate = True
@@ -287,28 +295,30 @@ class ScmIrlEnv(gym.Env):
         transform = from_origin(min_x, max_y, self.resolution, self.resolution)
         # Create the matrix
         #print(depths_lands_inside)
-        matrix = rasterize(depths_lands_inside, out_shape=(num_rows, num_cols), transform=transform, fill=np.nan)
+        matrix_depth_land = rasterize(depths_lands_inside, out_shape=(num_rows, num_cols), transform=transform, fill=np.nan)
 
 
-        matrix[-1,:] = (matrix[-2,:] + matrix[-3,:])/2
-        matrix[:,-1] = (matrix[:,-2] + matrix[:,-3])/2
-        matrix[0,:] = (matrix[1,:] + matrix[2,:])/2
-        matrix[:,0] = (matrix[:,1] + matrix[:,2])/2
+        matrix_depth_land[-1,:] = (matrix_depth_land[-2,:] + matrix_depth_land[-3,:])/2
+        matrix_depth_land[:,-1] = (matrix_depth_land[:,-2] + matrix_depth_land[:,-3])/2
+        matrix_depth_land[0,:] = (matrix_depth_land[1,:] + matrix_depth_land[2,:])/2
+        matrix_depth_land[:,0] = (matrix_depth_land[:,1] + matrix_depth_land[:,2])/2
 
         # Convert the matrix to a floating-point image
-        matrix_float = matrix.astype(np.float32)
+        matrix_depth_land_float = matrix_depth_land.astype(np.float32)
 
         # get only positive and non-nan values
-        valid_mask = np.logical_and(matrix_float > 0, ~np.isnan(matrix_float))
+        valid_mask = np.logical_and(matrix_depth_land_float > 0, ~np.isnan(matrix_depth_land_float))
 
         # Get the coordinates of the nearest valid cell for each missing cell
         nearest_valid_coords = np.array(ndimage.distance_transform_edt(~valid_mask, return_distances=False, return_indices=True))
 
         # Create a copy of the original matrix
-        matrix_filled = np.copy(matrix_float)
+        matrix_filled = np.copy(matrix_depth_land_float)
 
         # Replace only the nan values in the original matrix with the values of the nearest valid cells
-        matrix_filled[np.isnan(matrix_float)] = matrix_float[tuple(nearest_valid_coords[:, np.isnan(matrix_float)])]
+        matrix_filled[np.isnan(matrix_depth_land_float)] = matrix_depth_land_float[tuple(nearest_valid_coords[:, np.isnan(matrix_depth_land_float)])]
+
+
 
         matrix_filled = cv2.flip(matrix_filled, 1)
         # rotate the matrix to the original orientation
