@@ -1,7 +1,8 @@
 name: tanker
 env:
   id: 1
+  value: 1
   priority: 1
-  capacity: 1000
-  max_speed: 10
+  awareness_zone: [1000, 1000, 1000, 1000]
+  
 

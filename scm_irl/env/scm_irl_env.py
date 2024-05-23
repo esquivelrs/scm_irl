@@ -101,6 +101,10 @@ class ScmIrlEnv(gym.Env):
         self.sog_scale = 13
         self.cog_scale = np.pi
 
+        self.bicycle_model = False
+        self.copy_expert = False
+        self.dist_metric = "manhattan"
+
 
         self.truncated = False
         self.terminate = False
@@ -150,23 +154,30 @@ class ScmIrlEnv(gym.Env):
         sog_initial = self.agent_state.sog
         cog_initial = self.agent_state.cog
 
-        L =  self.vessel_metadata.length
-        
-        delta_cog = cog_target - cog_initial
-        delta_sog = sog_target - sog_initial
+        if self.bicycle_model:
+            L =  self.vessel_metadata.length
+            
+            delta_cog = cog_target - cog_initial
+            delta_sog = sog_target - sog_initial
 
-
-        beta = np.arctan(np.tan(delta_cog)/2)
-
-
+            beta = np.arctan(np.tan(delta_cog)/2)
+            self.timestep += self.sampling_time
+            north += np.cos(cog_initial + beta) * sog_target * self.scenario.sampling_time
+            east += np.sin(cog_initial + beta) * sog_target * self.scenario.sampling_time
+            sog = sog_target
+            cog = cog_initial + sog*np.tan(delta_cog)*np.cos(beta)/L * self.scenario.sampling_time
+        else:
+            self.timestep += self.sampling_time
+            north += np.cos(cog_target) * sog_target * self.scenario.sampling_time
+            east += np.sin(cog_target) * sog_target * self.scenario.sampling_time
+            sog = sog_target
+            cog = cog_target
         
-        
-        self.timestep += self.sampling_time
-        north += np.cos(cog_initial + beta) * sog_target * self.scenario.sampling_time
-        east += np.sin(cog_initial + beta) * sog_target * self.scenario.sampling_time
-        sog = sog_target
-        cog = cog_initial + sog*np.tan(delta_cog)*np.cos(beta)/L * self.scenario.sampling_time
-        
+        if self.copy_expert:
+            expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
+            north, east = expert_state.lat, expert_state.lon
+            sog = expert_state.sog
+            cog = expert_state.cog
         
         self.agent_state = VesselState(timestamp=self.timestep - self.start_time, lat=north, lon=east, sog=sog, cog=cog)
 
@@ -198,13 +209,23 @@ class ScmIrlEnv(gym.Env):
         # compute the 
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         # compute the distance between the expert and the agent
-        pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
+        
+        if self.dist_metric == "euclidean":
+            pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
+        elif self.dist_metric == "manhattan":
+            pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
+        else:
+            raise ValueError(f"dist_metric {self.dist_metric} is not valid")
+               
         #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
         cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
         #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
         reward = np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
+        print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
+
+
         #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
         if np.isnan(reward):
             reward = -1
@@ -251,33 +272,39 @@ class ScmIrlEnv(gym.Env):
         crop_box = self._create_crop_box(angle=90 - self.agent_state.cog*180/np.pi)
         
         depths_lands_inside = self.scenario.depth_lands_polygons.copy()
+        nodes_ways_inside = []
+        vessels_inside = []
 
         # add the nodes to the depths_lands_inside
         for node in self.nodes:
             node_polygon = box(node['east'] - 5, node['north'] - 5, node['east'] + 5, node['north'] + 5)
-            depths_lands_inside.append((node_polygon, - node['value']))
+            nodes_ways_inside.append((node_polygon, node['value']))
 
         # add ways to the depths_lands_inside
         for way in self.ways:
             way_polygon = shapely.geometry.LineString([(node[1], node[0]) for node in way['nodes']])
-            depths_lands_inside.append((way_polygon, -3))
+            nodes_ways_inside.append((way_polygon, 3))
 
         # add the vessel polygon to the depths_lands_inside                
         metadata = self.scenario.get_vessel_metadata(self.mmsi)
         vessel_polygon = self._render_vessel(metadata, self.agent_state) 
-        depths_lands_inside.append((vessel_polygon, -1))
+        vessels_inside.append((vessel_polygon, 1))
                 
         for vessel_mmsi in self.scenario.mmsis:
             if vessel_mmsi != self.mmsi and self.scenario.is_vessel_active(vessel_mmsi, self.timestep):
                 metadata = self.scenario.get_vessel_metadata(vessel_mmsi)
                 vessel_states = self.scenario.get_vessel_state_time(vessel_mmsi, self.timestep)
                 vessel_polygon = self._render_vessel(metadata, vessel_states) 
-                depths_lands_inside.append((vessel_polygon, -1))
+                vessels_inside.append((vessel_polygon, 1))
 
         depths_lands_inside = [(polygon.intersection(crop_box), depth) for polygon, depth in depths_lands_inside if crop_box.intersects(polygon)]
+        nodes_ways_inside = [(polygon.intersection(crop_box), depth) for polygon, depth in nodes_ways_inside if crop_box.intersects(polygon)]
+        vessels_inside = [(polygon.intersection(crop_box), depth) for polygon, depth in vessels_inside if crop_box.intersects(polygon)]
         
         # rotate the depths_lands_inside polygons to the cog of the vessel
         depths_lands_inside = [(rotate(polygon, self.agent_state.cog*180/np.pi, origin=(self.agent_state.lon, self.agent_state.lat)), depth) for polygon, depth in depths_lands_inside]
+        nodes_ways_inside = [(rotate(polygon, self.agent_state.cog*180/np.pi, origin=(self.agent_state.lon, self.agent_state.lat)), depth) for polygon, depth in nodes_ways_inside]
+        vessels_inside = [(rotate(polygon, self.agent_state.cog*180/np.pi, origin=(self.agent_state.lon, self.agent_state.lat)), depth) for polygon, depth in vessels_inside]
 
         if len(depths_lands_inside) == 0:
             return None
@@ -296,7 +323,14 @@ class ScmIrlEnv(gym.Env):
         # Create the matrix
         #print(depths_lands_inside)
         matrix_depth_land = rasterize(depths_lands_inside, out_shape=(num_rows, num_cols), transform=transform, fill=np.nan)
-
+        
+        #if nodes_ways_inside is not empty
+        if len(nodes_ways_inside) > 0:
+            matrix_nodes_ways = rasterize(nodes_ways_inside, out_shape=(num_rows, num_cols), transform=transform, fill=0)
+        else:
+            matrix_nodes_ways = np.zeros((num_rows, num_cols))
+        
+        matrix_vessels = rasterize(vessels_inside, out_shape=(num_rows, num_cols), transform=transform, fill=0)
 
         matrix_depth_land[-1,:] = (matrix_depth_land[-2,:] + matrix_depth_land[-3,:])/2
         matrix_depth_land[:,-1] = (matrix_depth_land[:,-2] + matrix_depth_land[:,-3])/2
@@ -313,18 +347,20 @@ class ScmIrlEnv(gym.Env):
         nearest_valid_coords = np.array(ndimage.distance_transform_edt(~valid_mask, return_distances=False, return_indices=True))
 
         # Create a copy of the original matrix
-        matrix_filled = np.copy(matrix_depth_land_float)
+        matrix_depth_land_filled = np.copy(matrix_depth_land_float)
 
         # Replace only the nan values in the original matrix with the values of the nearest valid cells
-        matrix_filled[np.isnan(matrix_depth_land_float)] = matrix_depth_land_float[tuple(nearest_valid_coords[:, np.isnan(matrix_depth_land_float)])]
+        matrix_depth_land_filled[np.isnan(matrix_depth_land_float)] = matrix_depth_land_float[tuple(nearest_valid_coords[:, np.isnan(matrix_depth_land_float)])]
 
+        # concat matrix in a way that they form a set 3 chanels
+        matrix_concat = np.stack((matrix_vessels, matrix_nodes_ways, matrix_depth_land_filled), axis=-1)
 
-
-        matrix_filled = cv2.flip(matrix_filled, 1)
+        # flip the matrix horizontally
+        matrix_concat = cv2.flip(matrix_concat, 1)
         # rotate the matrix to the original orientation
-        matrix_filled = cv2.rotate(matrix_filled, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        matrix_concat = cv2.rotate(matrix_concat, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-        return matrix_filled
+        return matrix_concat
 
 
 
@@ -466,7 +502,13 @@ class ScmIrlEnv(gym.Env):
 
     def _render_observartion_matrix(self):
 
-        observation_matrix = self.observation_matrix
+        observation_matrix_in = self.observation_matrix
+
+        #observation_matrix = np.copy(observation_matrix_in[:,:,0])
+
+        # combine the 3 channels into a single channel taking the nonzero values from channel 0 and 1 and the values from channel 2
+        observation_matrix = np.where(observation_matrix_in[:,:,1] > 0, -observation_matrix_in[:,:,1], observation_matrix_in[:,:,2])
+        observation_matrix = np.where(observation_matrix_in[:,:,0] > 0, - observation_matrix_in[:,:,0], observation_matrix)
 
         # positive values only multiply by 255 
         observation_matrix[observation_matrix > 0] = observation_matrix[observation_matrix > 0] * 255/100
