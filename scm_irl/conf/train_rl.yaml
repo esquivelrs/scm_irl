@@ -1,0 +1,10 @@
+defaults:
+  - env/scenario
+  - env/env_cfg
+  - shiptypes/tanker
+
+policy: 'MlpPolicy' #MultiInputPolicy
+total_timesteps: 5
+env_name: 'ScmIrl-v0'
+
+# add nodes from ./env/nodes.yaml

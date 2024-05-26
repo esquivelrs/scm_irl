@@ -14,16 +14,16 @@ import yaml
 from . import CONFIG_DIR
 
 class Scenario:
-    def __init__(self, scenario_path):
+    def __init__(self, cfg, scenario_path):
+        self.cfg = cfg
         self.api = overpy.Overpass()
         self.scenario_path = scenario_path
         self._load_metadata(self.scenario_path)
         self._load_states(self.scenario_path)
         self._compute_vessel_relative_neighbor_states()
         self.depth_lands_polygons, self.depth_lands_polygons_lat_lon = self.scenario_depth_lands_polygons()
-        self.nodes_conf = yaml.load(open(os.path.join(CONFIG_DIR,"env/nodes.yaml")), Loader=yaml.FullLoader)
-        self.nodes_conf['vessel'] = {'color': [0, 0, 0], 'value': 1, 'size': 1}
-        self.nodes_conf[None] = {'color': [96, 96, 96], 'value': 2, 'size': 1}
+        #print(cfg['env'])
+        self.seamark_conf = cfg['env']['seamarks']
 
     def _load_metadata(self, scenario_path):
         metadata_path = os.path.join(scenario_path, "metadata.json")
@@ -227,7 +227,7 @@ class Scenario:
         ways_north_east = []
         for node in nodes:
             north, east = lat_lon_to_north_east(float(node.lat), float(node.lon), self.lat0, self.lon0)
-            node_val = self.nodes_conf[node.tags.get('seamark:type')]
+            node_val = self.seamark_conf[node.tags.get('seamark:type') if node.tags.get('seamark:type') else 'Unknown']
             nodes_north_east.append({'id':node.id, 'north':north, 'east':east, 
                                      'type':node.tags.get('seamark:type'), 
                                      'color': node_val['color'],
@@ -239,10 +239,11 @@ class Scenario:
             for node in way.nodes:
                 north, east = lat_lon_to_north_east(float(node.lat), float(node.lon), self.lat0, self.lon0)
                 way_nodes.append((north, east))
+            way_val = self.seamark_conf['way']
             ways_north_east.append({'id':way.id, 'nodes':way_nodes, 
                                     'type':way.tags.get('seamark:type'), 
-                                    'color': [255, 255, 0],
-                                    'value': 1})
+                                    'color': way_val['color'],
+                                    'value': way_val["value"],})
         
         return nodes_north_east, ways_north_east
     
@@ -257,7 +258,7 @@ class Scenario:
     
     def nodes_list(self):
         # sort the nodes based on the value
-        nodes = self.nodes_conf
+        nodes = self.seamark_conf
         nodes_val_list = []
         for node in nodes:
             nodes_val_list.append((node, nodes[node]["value"], nodes[node]["color"]))

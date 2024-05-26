@@ -13,3 +13,4 @@ overpy
 imitation
 wandb
 moviepy
+hydra-core

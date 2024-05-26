@@ -33,13 +33,14 @@ def modulate_color(color, modulation):
 class ScmIrlEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, scenario_path, render_mode=None, start_time_reference=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1):
-        
+    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1):
+        self.cfg = cfg
+        self.episode_number = 0
         self.render_mode = render_mode
 
         self.scenario_path = scenario_path
 
-        self.scenario = Scenario(scenario_path)
+        self.scenario = Scenario(cfg, scenario_path)
 
         self.sampling_time = self.scenario.sampling_time
 
@@ -64,14 +65,17 @@ class ScmIrlEnv(gym.Env):
             self.start_time = start_time_reference
 
         self.timestep = self.start_time
-        self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
 
+        self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
+        if end_time_override is not None:
+            self.end_time = end_time_override
+        
         print(f"mmsi: {self.mmsi}, start_time: {self.start_time}, end_time: {self.end_time}")
 
         self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.start_time)
 
         self.agent_final_location = self.scenario.get_vessel_state_time(self.mmsi, self.end_time)
-        self.agent_final_location = np.array([self.agent_final_location.lat, self.agent_final_location.lon])
+        #self.agent_final_location = np.array([self.agent_final_location.lat, self.agent_final_location.lon])
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -98,24 +102,26 @@ class ScmIrlEnv(gym.Env):
         # self.reward = 0
         # self.info = {}
 
-        self.sog_scale = 13
-        self.cog_scale = np.pi
+        self.sog_scale = cfg['env']['sog_scale']
+        self.cog_scale = cfg['env']['cog_scale'] * np.pi
 
-        self.bicycle_model = False
-        self.copy_expert = False
-        self.dist_metric = "manhattan"
+        self.bicycle_model = cfg['env']['bicycle_model']
+        self.copy_expert = cfg['env']['copy_expert']
+        self.dist_metric = cfg['env']['dist_metric']
 
 
         self.truncated = False
         self.terminate = False
+        self.done = False
         self.info = {}
 
-        self.observation_space = spaces.Dict({
-            'observation_matrix': spaces.Box(low=-100, high=100, shape=self.observation_matrix.shape, dtype=np.float32),
-            'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
-            'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
-            'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
-        })
+        # self.observation_space = spaces.Dict({
+        #     'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
+        #     'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+        #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+        #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+        # })
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
@@ -148,7 +154,7 @@ class ScmIrlEnv(gym.Env):
 
     def _pre_step(self):
         north, east = self.agent_state.lat , self.agent_state.lon
-        
+        #print(self.action)
         sog_target, cog_target = self.action[0] * self.sog_scale, self.action[1] * self.cog_scale
 
         sog_initial = self.agent_state.sog
@@ -188,15 +194,33 @@ class ScmIrlEnv(gym.Env):
 
         if not np.isnan(observation_matrix).any():
             self.observation_matrix = observation_matrix
+            # scale channel 0 and 1 to 255
+            self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
+            self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
 
         agent_obs = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog, expert_state.cog])
-        obs = {'observation_matrix': self.observation_matrix,
-                'agent_state': agent_obs, 
+        
+        target_state = self.scenario.relative_state(self.agent_final_location, self.agent_state)
+        target_state = np.array([target_state.lat, target_state.lon])
+        
+        # obs = {'observation_matrix': self.observation_matrix,
+        #         'agent_state': agent_obs, 
+        #         'expert_state': expert_obs,
+        #         'target': target_state}
+      
+        obs = {'agent_state': agent_obs, 
                 'expert_state': expert_obs,
-                'target': self.agent_final_location}
+                'target': target_state}
+
+        transformed_obs_values = [np.array(v) for v in obs.values()]
+
+        # Concatenate all values into a single vector
+        obs = np.concatenate(transformed_obs_values)
+        # add one level of nesting
+        #obs = np.expand_dims(obs, axis=0)
 
         terminate = False
         if self.observation_matrix is None or np.isnan(agent_obs).any() or np.isnan(observation_matrix).any():
@@ -210,9 +234,9 @@ class ScmIrlEnv(gym.Env):
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         # compute the distance between the expert and the agent
         
-        if self.dist_metric == "euclidean":
+        if self.dist_metric == "l2":
             pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
-        elif self.dist_metric == "manhattan":
+        elif self.dist_metric == "l1":
             pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
         else:
             raise ValueError(f"dist_metric {self.dist_metric} is not valid")
@@ -223,7 +247,7 @@ class ScmIrlEnv(gym.Env):
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
         reward = np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
-        print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
+        #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
 
 
         #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
@@ -262,7 +286,10 @@ class ScmIrlEnv(gym.Env):
             self.terminate = False
             if self.render_mode == "human":
                 self.render()
-        self.info = {}
+        #self.info = {}
+        self.done = self.terminate or self.truncated
+
+        self.info = {"rollout": {"obs": obs, "rews": self.reward, "done": self.done}}
 
 
         return obs, self.reward, self.terminate, self.truncated, self.info
@@ -283,7 +310,7 @@ class ScmIrlEnv(gym.Env):
         # add ways to the depths_lands_inside
         for way in self.ways:
             way_polygon = shapely.geometry.LineString([(node[1], node[0]) for node in way['nodes']])
-            nodes_ways_inside.append((way_polygon, 3))
+            nodes_ways_inside.append((way_polygon, self.cfg['env']['seamarks']['way']['value']))
 
         # add the vessel polygon to the depths_lands_inside                
         metadata = self.scenario.get_vessel_metadata(self.mmsi)
@@ -352,6 +379,10 @@ class ScmIrlEnv(gym.Env):
         # Replace only the nan values in the original matrix with the values of the nearest valid cells
         matrix_depth_land_filled[np.isnan(matrix_depth_land_float)] = matrix_depth_land_float[tuple(nearest_valid_coords[:, np.isnan(matrix_depth_land_float)])]
 
+        # Normalize the matrix
+        matrix_depth_land_filled = matrix_depth_land_filled * 255 / self.cfg['env']['depth_max']
+
+
         # concat matrix in a way that they form a set 3 chanels
         matrix_concat = np.stack((matrix_vessels, matrix_nodes_ways, matrix_depth_land_filled), axis=-1)
 
@@ -387,8 +418,12 @@ class ScmIrlEnv(gym.Env):
         self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.start_time)
         self.truncated = False
         self.terminate = False
+        self.done = False
         self.reward = 0
         obs,_ = self._get_obs()
+        print(f'Episode number {self.episode_number} started')
+        self.episode_number += 1
+
         return obs, self.info
     
 
@@ -422,7 +457,7 @@ class ScmIrlEnv(gym.Env):
             #color = (0, 0, 255)
             # Modulate the color based on the depth
             #color = modulate_color(color, 1 - depth[1] / 100)
-            color = self.color_map[int(depth[1]*255/100)]
+            color = self.color_map[int(depth[1]*255/self.cfg['env']['depth_max'])]
             
             # Draw the polygon
             pygame.draw.polygon(canvas_aratio, color, coords)
@@ -507,11 +542,11 @@ class ScmIrlEnv(gym.Env):
         #observation_matrix = np.copy(observation_matrix_in[:,:,0])
 
         # combine the 3 channels into a single channel taking the nonzero values from channel 0 and 1 and the values from channel 2
-        observation_matrix = np.where(observation_matrix_in[:,:,1] > 0, -observation_matrix_in[:,:,1], observation_matrix_in[:,:,2])
+        observation_matrix = np.where(observation_matrix_in[:,:,1] > 0, - observation_matrix_in[:,:,1], observation_matrix_in[:,:,2])
         observation_matrix = np.where(observation_matrix_in[:,:,0] > 0, - observation_matrix_in[:,:,0], observation_matrix)
 
         # positive values only multiply by 255 
-        observation_matrix[observation_matrix > 0] = observation_matrix[observation_matrix > 0] * 255/100
+        observation_matrix[observation_matrix > 0] = observation_matrix[observation_matrix > 0]
 
         indices = (observation_matrix).astype(int)
         # print max and min values

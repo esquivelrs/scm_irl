@@ -1,0 +1,12 @@
+
+# Environment configuration
+bicycle_model: false
+copy_expert: false
+dist_metric: l1
+
+# Environment parameters
+sog_scale: 13
+cog_scale: 1
+depth_max: 100
+seamark_max: 50
+vessel_types_max: 5

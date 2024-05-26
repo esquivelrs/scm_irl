@@ -12,5 +12,5 @@ from gymnasium.envs.registration import register
 register(
      id="scmirl-v0",
      entry_point="scm_irl/env:ScmIrlEnv",
-     max_episode_steps=500,
+     max_episode_steps=1000,
 )
