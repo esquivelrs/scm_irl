@@ -121,7 +121,7 @@ class ScmIrlEnv(gym.Env):
         #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
         #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
         # })
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float64)
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
@@ -421,7 +421,7 @@ class ScmIrlEnv(gym.Env):
         self.done = False
         self.reward = 0
         obs,_ = self._get_obs()
-        print(f'Episode number {self.episode_number} started')
+        #print(f'Episode number {self.episode_number} started')
         self.episode_number += 1
 
         return obs, self.info
