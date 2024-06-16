@@ -7,4 +7,13 @@ policy: 'MlpPolicy' #MultiInputPolicy
 total_timesteps: 10
 env_name: 'ScmIrl-v0'
 
+# multi scenario
+multi_scenario: False
+scenarios_path: "../data/raw/"
+scenario_name: "scenario_2a66ceaf61" # In case multi_scenario: False
+number_envs: 1
+
+
+
+
 # add nodes from ./env/nodes.yaml

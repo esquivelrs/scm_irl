@@ -37,6 +37,13 @@ import gymnasium as gym
 
 SEED = 42
 
+gym.register(
+    id='ScmIrl-v0',
+    entry_point='scm_irl.env:ScmIrlEnv',
+    max_episode_steps=1000,
+)
+
+
 
 
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
@@ -48,26 +55,43 @@ def train(cfg: DictConfig) -> None:
     output_path = os.path.join("../outputs", model_name)
     os.makedirs(output_path, exist_ok=True)
 
+    def make_env(env_id, rank, seed=0):
+        def _init():
+            path = "../data/raw/scenario_2a66ceaf61"
+            path = os.path.join(utils.get_original_cwd(), path)
+            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
+            #env = FlatObservationWrapper(env)
+            print(env.observation_space)
+            # if rank == 0:  # only add the RecordVideo wrapper for the first environment
+            #     env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
+            env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
+            return env
+        return _init
 
     num_envs = 1
-    path = "../data/raw/scenario_2a66ceaf61"
-    path = os.path.join(utils.get_original_cwd(), path)
-    gym.register(
-        id='ScmIrl-v0',
-        entry_point='scm_irl.env.scm_irl_env:ScmIrlEnv',
-        max_episode_steps=2000,
-        kwargs={"cfg": cfg, 
-                 "scenario_path": path,
-                 "mmsi": 215811000, 
-                 "awareness_zone": [200, 500, 200, 200], 
-                 #"start_time_reference": 1577905000.0, 
-                 #"end_time_override": 1577905020.0, 
-                 "render_mode": "rgb_array"}
-                 )
+    env = DummyVecEnv([make_env(cfg.env_name, i) for i in range(num_envs)])
 
     
-    env = make_vec_env("ScmIrl-v0", n_envs=num_envs, 
-                       rng=np.random.default_rng(SEED))
+    # path = "../data/raw/scenario_2a66ceaf61"
+    # path = os.path.join(utils.get_original_cwd(), path)
+    # # env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, end_time_override = 1577905020.0, render_mode="rgb_array")
+
+    # gym.register(
+    #     id='ScmIrl-v0',
+    #     entry_point='scm_irl.env.scm_irl_env:ScmIrlEnv',
+    #     max_episode_steps=2000,
+    #     kwargs={"cfg": cfg, 
+    #              "scenario_path": path,
+    #              "mmsi": 215811000, 
+    #              "awareness_zone": [200, 500, 200, 200], 
+    #              #"start_time_reference": 1577905000.0, 
+    #              #"end_time_override": 1577905020.0, 
+    #              "render_mode": "rgb_array"}
+    #              )
+
+    
+    # env = make_vec_env("ScmIrl-v0", n_envs=num_envs, 
+    #                    rng=np.random.default_rng(SEED))
     
     print("############# Registered")
 

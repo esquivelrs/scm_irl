@@ -38,11 +38,11 @@ def train(cfg: DictConfig) -> None:
         def _init():
             path = "../data/raw/scenario_2a66ceaf61"
             path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="human")
-            env = FlatObservationWrapper(env)
+            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
+            #env = FlatObservationWrapper(env)
             print(env.observation_space)
-            # if rank == 0:  # only add the RecordVideo wrapper for the first environment
-            #     env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
+            if rank == 0:  # only add the RecordVideo wrapper for the first environment
+                env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
             env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
             return env
         return _init
