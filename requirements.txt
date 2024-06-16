@@ -14,3 +14,5 @@ imitation
 wandb
 moviepy
 hydra-core
+#hydra
+omegaconf
