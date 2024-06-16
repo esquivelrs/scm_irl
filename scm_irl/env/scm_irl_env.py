@@ -255,7 +255,7 @@ class ScmIrlEnv(gym.Env):
             reward = -1
             
 
-        return reward
+        return - reward
     
 
     def step(self, action):

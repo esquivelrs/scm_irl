@@ -170,6 +170,7 @@ def train(cfg: DictConfig) -> None:
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
+        allow_variable_horizon=True,
     )
     learner_rewards_before_training, _ = evaluate_policy(
         learner, env, 100, return_episode_rewards=True)
