@@ -33,7 +33,7 @@ def modulate_color(color, modulation):
 class ScmIrlEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1):
+    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1, dict_scenarios=None):
         self.cfg = cfg
         self.episode_number = 0
         self.render_mode = render_mode
@@ -49,12 +49,29 @@ class ScmIrlEnv(gym.Env):
             mmsis = self.scenario.collision_mmsis
         else:
             mmsis = self.scenario.mmsis
-        
+            
+
         if mmsi is None:
-            mmsi = np.random.choice(mmsis)
+            # check if the mmsi is a valid type in valid_vessels
+            #if self.scenario.get_vessel_metadata(mmsi)
+            mmsis = [mmsi for mmsi in mmsis if self.scenario.get_vessel_metadata(mmsi).ship_type in self.cfg['env']['valid_vessels']]
+            if len(mmsis) == 0:
+                print(f"no valid mmsi in the scenario {scenario_path}")
+                return None
+
+            if dict_scenarios is not None:
+                mmsi_used = dict_scenarios[scenario_path]
+
+            mmsi_remained = [mmsi for mmsi in mmsis if mmsi not in mmsi_used]
+            if len(mmsi_remained) == 0:
+                print(f"no more mmsi to use in the scenario {scenario_path}")
+                return None
+            
+            mmsi = np.random.choice(mmsi_remained)
+
 
         if mmsi not in mmsis:
-            raise ValueError(f"mmsi {mmsi} is not in the scenario")
+            raise ValueError(f"mmsi {mmsi} is not in the scenario {scenario_path}")
 
         self.mmsi = mmsi
         self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
@@ -122,6 +139,8 @@ class ScmIrlEnv(gym.Env):
         #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
         # })
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float64)
+        #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
+
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
@@ -135,6 +154,8 @@ class ScmIrlEnv(gym.Env):
 
         self.window = None
         self.clock = None
+
+        return mmsi
 
         
     
@@ -201,7 +222,9 @@ class ScmIrlEnv(gym.Env):
         agent_obs = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
-        expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog, expert_state.cog])
+        expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
+        expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
+        
         
         target_state = self.scenario.relative_state(self.agent_final_location, self.agent_state)
         target_state = np.array([target_state.lat, target_state.lon])
@@ -214,6 +237,7 @@ class ScmIrlEnv(gym.Env):
         obs = {'agent_state': agent_obs, 
                 'expert_state': expert_obs,
                 'target': target_state}
+        #obs = {'expert_action': expert_action}
 
         transformed_obs_values = [np.array(v) for v in obs.values()]
 
@@ -246,16 +270,17 @@ class ScmIrlEnv(gym.Env):
         #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
-        reward = np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
+        reward = 10 * np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
         #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
-
+        #reward = - pos_error
 
         #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
         if np.isnan(reward):
+            print("reward is nan")
             reward = -1
             
 
-        return - reward
+        return reward
     
 
     def step(self, action):
@@ -277,7 +302,7 @@ class ScmIrlEnv(gym.Env):
             self.truncated = False
             self.terminate = True
             print("agent out of the scenario")
-            self.reward = -1
+            self.reward = -10
         elif self.timestep >= self.end_time:
             self.truncated = True
             self.terminate = True

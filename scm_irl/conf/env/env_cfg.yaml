@@ -10,3 +10,6 @@ cog_scale: 1
 depth_max: 100
 seamark_max: 50
 vessel_types_max: 5
+
+# valid vessels
+valid_vessels: ['Cargo', 'Tanker']

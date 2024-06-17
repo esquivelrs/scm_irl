@@ -6,7 +6,7 @@ import hydra
 from hydra import utils
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC, DDPG, TD3, A2C
 from stable_baselines3.common.vec_env import DummyVecEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -61,7 +61,7 @@ def train(cfg: DictConfig) -> None:
     num_envs = 1
     env = DummyVecEnv([make_env(cfg.env_name, i) for i in range(num_envs)])
 
-    model = PPO(cfg.policy, env, verbose=1, tensorboard_log=f"runs/ppo")
+    model = A2C(cfg.policy, env, verbose=1, tensorboard_log=f"runs/ppo")
     model.learn(total_timesteps=cfg.total_timesteps)
 
     # save model

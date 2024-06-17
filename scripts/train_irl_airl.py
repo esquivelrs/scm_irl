@@ -59,7 +59,7 @@ def train(cfg: DictConfig) -> None:
         def _init():
             path = "../data/raw/scenario_2a66ceaf61"
             path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
+            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="human")
             #env = FlatObservationWrapper(env)
             print(env.observation_space)
             # if rank == 0:  # only add the RecordVideo wrapper for the first environment
@@ -123,6 +123,7 @@ def train(cfg: DictConfig) -> None:
 
     #policy_registry.register("my-policy", load_policy)
 
+    print("############# Load Policy")
     expert = load_policy(
         "copy_action",
         organization="scm",
@@ -131,11 +132,11 @@ def train(cfg: DictConfig) -> None:
     )
 
 
-
+    print("############# rollouts")
     rollouts = rollout.rollout(
         expert,
         env,
-        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=20),
+        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=2),
         unwrap=False,
         rng=np.random.default_rng(SEED),
         exclude_infos=True,
@@ -144,7 +145,7 @@ def train(cfg: DictConfig) -> None:
     # print("Rollouts")
     # print(rollouts)
 
-
+    print("############# learner")
     learner = PPO(
         env=env,
         policy=MlpPolicy,
@@ -156,14 +157,17 @@ def train(cfg: DictConfig) -> None:
         seed=SEED,
     )
 
+    print("############# reward_net")
     reward_net = BasicRewardNet(
         observation_space=env.observation_space,
         action_space=env.action_space,
         normalize_input_layer=RunningNorm,
     )
+
+    print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=20,
+        demo_batch_size=2,
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
@@ -171,8 +175,10 @@ def train(cfg: DictConfig) -> None:
         reward_net=reward_net,
         allow_variable_horizon=True,
     )
+
+    print("############# evaluate_policy")
     learner_rewards_before_training, _ = evaluate_policy(
-        learner, env, 100, return_episode_rewards=True)
+        learner, env, 5, return_episode_rewards=True)
     
     print("Rewards before training")
     print(learner_rewards_before_training)
@@ -180,7 +186,7 @@ def train(cfg: DictConfig) -> None:
     gail_trainer.train(10_000)
 
     learner_rewards_after_training, _ = evaluate_policy(
-        learner, env, 100, return_episode_rewards=True)
+        learner, env, 5, return_episode_rewards=True)
     
     print("Rewards after training")
     print(learner_rewards_after_training)
