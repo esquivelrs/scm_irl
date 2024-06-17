@@ -232,6 +232,7 @@ class ScmIrlEnv(gym.Env):
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
+
         
         agent_obs = self.scenario.relative_state(expert_state, self.agent_state)
         agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
