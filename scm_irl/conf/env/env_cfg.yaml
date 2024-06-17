@@ -3,6 +3,7 @@
 bicycle_model: false
 copy_expert: false
 dist_metric: l1
+start_random: true
 
 # Environment parameters
 sog_scale: 13
