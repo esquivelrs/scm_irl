@@ -109,7 +109,12 @@ class ScmIrlEnv(gym.Env):
             self.bicycle_model = cfg['env']['bicycle_model']
             self.copy_expert = cfg['env']['copy_expert']
             self.dist_metric = cfg['env']['dist_metric']
+<<<<<<< HEAD
             self.start_random = cfg['env']['start_random']
+=======
+            self.start_time_random = cfg['env']['start_time_random']
+            self.start_pos_random = cfg['env']['start_pos_random']
+>>>>>>> bc609ec (random pos)
 
 
             self.truncated = False
@@ -223,10 +228,6 @@ class ScmIrlEnv(gym.Env):
             # scale channel 0 and 1 to 255
             self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
             self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
-
-
-
-        #agent_obs = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
@@ -234,6 +235,11 @@ class ScmIrlEnv(gym.Env):
         
         agent_obs = self.scenario.relative_state(expert_state, self.agent_state)
         agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
+        # print(f"agent_obs {agent_obs}")
+        # print(f"expert_obs {expert_obs}")
+
+        # agent_st = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
+        # print(f"agent_st {agent_st}")
         
         target_state = self.scenario.relative_state(self.agent_state, self.agent_final_location)
         target_state = np.array([target_state.lat, target_state.lon])
@@ -272,13 +278,18 @@ class ScmIrlEnv(gym.Env):
             pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
         else:
             raise ValueError(f"dist_metric {self.dist_metric} is not valid")
+        
+        # print(f"pos_error {pos_error}")
                
         #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
         cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
         #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
-        reward = np.exp(-pos_error*0.1) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
+        pos_reward = np.exp(-pos_error * self.cfg['env']['reward_pos']) 
+
+        reward = pos_reward + pos_reward * (np.exp(- cog_diff) + np.exp(- sog_diff))
+        # print(f"reward {reward}")
         #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
         #reward = - pos_error
 
@@ -451,16 +462,23 @@ class ScmIrlEnv(gym.Env):
         # self.start_time
         # self.end_time
         # self.sampling_time
-        if self.start_random:
+        
+        self.timestep = self.start_time
+        if self.start_time_random:
             time_steps = list(range(int(self.start_time), int(self.end_time - 2 * self.sampling_time ), int(self.sampling_time)))
             random_time = random.choice(time_steps)
             self.timestep = random_time
-
-        else:
-            self.timestep = self.start_time
         
-
         self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
+        if self.start_pos_random:
+            north = random.uniform(self.scenario.north_min, self.scenario.north_max)
+            east = random.uniform(self.scenario.east_min, self.scenario.east_max)
+            cog = random.uniform(0, 2 * math.pi)
+            sog = random.uniform(0, 25)
+
+            self.agent_state = VesselState(timestamp=self.timestep - self.start_time, lat=north, lon=east, sog=sog, cog=cog)
+            pass
+
         self.truncated = False
         self.terminate = False
         self.done = False
