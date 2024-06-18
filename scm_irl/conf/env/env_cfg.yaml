@@ -1,8 +1,9 @@
-
 # Environment configuration
-bicycle_model: false
+bicycle_model: true
 copy_expert: false
-dist_metric: l1
+dist_metric: l2
+start_time_random: true
+start_pos_random: true
 
 # Environment parameters
 sog_scale: 13
@@ -10,3 +11,9 @@ cog_scale: 1
 depth_max: 100
 seamark_max: 50
 vessel_types_max: 5
+
+# valid vessels
+valid_vessels: ['Cargo', 'Tanker']
+
+# scale reward
+reward_pos: 0.01

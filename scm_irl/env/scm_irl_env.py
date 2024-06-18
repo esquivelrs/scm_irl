@@ -23,6 +23,7 @@ from shapely.ops import unary_union, polygonize
 from shapely.geometry import MultiPolygon
 from scipy import ndimage
 import math
+import random
 
 
 def modulate_color(color, modulation):
@@ -33,7 +34,7 @@ def modulate_color(color, modulation):
 class ScmIrlEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1):
+    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1, dict_scenarios={}):
         self.cfg = cfg
         self.episode_number = 0
         self.render_mode = render_mode
@@ -49,94 +50,120 @@ class ScmIrlEnv(gym.Env):
             mmsis = self.scenario.collision_mmsis
         else:
             mmsis = self.scenario.mmsis
-        
+            
+
         if mmsi is None:
-            mmsi = np.random.choice(mmsis)
+            mmsi = self.select_valid_mmsi(mmsis, scenario_path, dict_scenarios, self.cfg)
 
-        if mmsi not in mmsis:
-            raise ValueError(f"mmsi {mmsi} is not in the scenario")
+        self.mmsi = mmsi # Return None if no valid mmsi is found
 
-        self.mmsi = mmsi
-        self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
+        if self.mmsi in mmsis:
+            self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
 
-        if start_time_reference is None:
-            self.start_time = next(iter(self.scenario.vessels[mmsi]['states']))
-        else:
-            self.start_time = start_time_reference
+            if start_time_reference is None:
+                self.start_time = next(iter(self.scenario.vessels[mmsi]['states']))
+            else:
+                self.start_time = start_time_reference
 
-        self.timestep = self.start_time
+            self.timestep = self.start_time
 
-        self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
-        if end_time_override is not None:
-            self.end_time = end_time_override
+            self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
+            if end_time_override is not None:
+                self.end_time = end_time_override
+            
+            print(f"mmsi: {self.mmsi}, start_time: {self.start_time}, end_time: {self.end_time}")
+
+            self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.start_time)
+
+            self.agent_final_location = self.scenario.get_vessel_state_time(self.mmsi, self.end_time)
+            #self.agent_final_location = np.array([self.agent_final_location.lat, self.agent_final_location.lon])
+
+            assert render_mode is None or render_mode in self.metadata["render_modes"]
+            self.render_mode = render_mode
+
+            # front, back, left, right
+            self.awareness_zone = awareness_zone
+
+            self.resolution = resolution
+            self.nodes, self.ways = self.scenario.get_nodes_and_ways_scenario_north_east()
+            self.observation_matrix = self._get_observation_matrix()
+
+            self.cmap = cmap_seachart()
+
+            self.color_map = create_color_map()
+            _, self.nodes_color = self.scenario.nodes_list()
+            # append to color_map the nodes colors
+            self.color_map = np.concatenate((self.color_map, self.nodes_color), axis=0)
+
+            # self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))
+            # self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(4,))
+            # self.state = None
+            # self.timestep = 0
+            # self.truncated = False
+            # self.reward = 0
+            # self.info = {}
+
+            self.sog_scale = cfg['env']['sog_scale']
+            self.cog_scale = cfg['env']['cog_scale'] * np.pi
+
+            self.bicycle_model = cfg['env']['bicycle_model']
+            self.copy_expert = cfg['env']['copy_expert']
+            self.dist_metric = cfg['env']['dist_metric']
+            self.start_time_random = cfg['env']['start_time_random']
+            self.start_pos_random = cfg['env']['start_pos_random']
+
+
+            self.truncated = False
+            self.terminate = False
+            self.done = False
+            self.info = {}
+
+            # self.observation_space = spaces.Dict({
+            #     'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
+            #     'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+            #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+            #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+            # })
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
+            #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
+
+
+            self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
+
+            
+            self.window_size = (700,500)  # The size of the PyGame window
+            self.padding = 20  # The padding around the grid
+            self.window_size_total = (self.window_size[0] + 3*self.padding, self.window_size[1] + 2* self.padding)
+            self.panel_size = 200  # The size of the panel for additional graphics
+            self.window_scenario_size = (self.window_size[0] - self.panel_size, self.window_size[1])
+            self.window_observation_size = (self.panel_size, int(self.window_size[1]/2))
+
+            self.window = None
+            self.clock = None
+
+
+    def select_valid_mmsi(self, mmsis, scenario_path, dict_scenarios, cfg):
+
+        # Filter MMSIs based on ship type being in valid vessels
+        valid_mmsis = [mmsi for mmsi in mmsis if self.scenario.get_vessel_metadata(mmsi).ship_type in cfg['env']['valid_vessels']]
         
-        print(f"mmsi: {self.mmsi}, start_time: {self.start_time}, end_time: {self.end_time}")
+        if not valid_mmsis:
+            print(f"no valid mmsi in the scenario {scenario_path}")
+            return None
 
-        self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.start_time)
-
-        self.agent_final_location = self.scenario.get_vessel_state_time(self.mmsi, self.end_time)
-        #self.agent_final_location = np.array([self.agent_final_location.lat, self.agent_final_location.lon])
-
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
-        self.render_mode = render_mode
-
-        # front, back, left, right
-        self.awareness_zone = awareness_zone
-
-        self.resolution = resolution
-        self.nodes, self.ways = self.scenario.get_nodes_and_ways_scenario_north_east()
-        self.observation_matrix = self._get_observation_matrix()
-
-        self.cmap = cmap_seachart()
-
-        self.color_map = create_color_map()
-        _, self.nodes_color = self.scenario.nodes_list()
-        # append to color_map the nodes colors
-        self.color_map = np.concatenate((self.color_map, self.nodes_color), axis=0)
-
-        # self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))
-        # self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(4,))
-        # self.state = None
-        # self.timestep = 0
-        # self.truncated = False
-        # self.reward = 0
-        # self.info = {}
-
-        self.sog_scale = cfg['env']['sog_scale']
-        self.cog_scale = cfg['env']['cog_scale'] * np.pi
-
-        self.bicycle_model = cfg['env']['bicycle_model']
-        self.copy_expert = cfg['env']['copy_expert']
-        self.dist_metric = cfg['env']['dist_metric']
-
-
-        self.truncated = False
-        self.terminate = False
-        self.done = False
-        self.info = {}
-
-        # self.observation_space = spaces.Dict({
-        #     'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
-        #     'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
-        #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
-        #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
-        # })
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float64)
-
-        self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
-
+        # Exclude already used MMSIs if dict_scenarios is provided
+        if self.scenario.scenario_id not in dict_scenarios:
+            return np.random.choice(valid_mmsis)
         
-        self.window_size = (700,500)  # The size of the PyGame window
-        self.padding = 20  # The padding around the grid
-        self.window_size_total = (self.window_size[0] + 3*self.padding, self.window_size[1] + 2* self.padding)
-        self.panel_size = 200  # The size of the panel for additional graphics
-        self.window_scenario_size = (self.window_size[0] - self.panel_size, self.window_size[1])
-        self.window_observation_size = (self.panel_size, int(self.window_size[1]/2))
-
-        self.window = None
-        self.clock = None
-
+        mmsi_used = dict_scenarios.get(self.scenario.scenario_id, [])
+        remaining_mmsis = [mmsi for mmsi in valid_mmsis if mmsi not in mmsi_used]
         
+        if not remaining_mmsis:
+            print(f"no more mmsi to use in the scenario {scenario_path}")
+            return None
+
+        # Randomly select from the remaining valid MMSIs
+        return np.random.choice(remaining_mmsis)     
     
     def scale_coords(self, coords, north_min, north_max, east_min, east_max, height, width):
         north_range = north_max - north_min
@@ -197,13 +224,20 @@ class ScmIrlEnv(gym.Env):
             # scale channel 0 and 1 to 255
             self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
             self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
-
-        agent_obs = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
-        expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog, expert_state.cog])
+        expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
+        # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         
-        target_state = self.scenario.relative_state(self.agent_final_location, self.agent_state)
+        agent_obs = self.scenario.relative_state(expert_state, self.agent_state)
+        agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
+        # print(f"agent_obs {agent_obs}")
+        # print(f"expert_obs {expert_obs}")
+
+        # agent_st = np.array([self.agent_state.lat, self.agent_state.lon, self.agent_state.sog, self.agent_state.cog])
+        # print(f"agent_st {agent_st}")
+        
+        target_state = self.scenario.relative_state(self.agent_state, self.agent_final_location)
         target_state = np.array([target_state.lat, target_state.lon])
         
         # obs = {'observation_matrix': self.observation_matrix,
@@ -212,8 +246,8 @@ class ScmIrlEnv(gym.Env):
         #         'target': target_state}
       
         obs = {'agent_state': agent_obs, 
-                'expert_state': expert_obs,
                 'target': target_state}
+        #obs = {'expert_action': expert_action}
 
         transformed_obs_values = [np.array(v) for v in obs.values()]
 
@@ -240,22 +274,28 @@ class ScmIrlEnv(gym.Env):
             pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
         else:
             raise ValueError(f"dist_metric {self.dist_metric} is not valid")
+        
+        # print(f"pos_error {pos_error}")
                
         #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
         cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
         #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
         sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
 
-        reward = np.exp(-pos_error) # + 0.5 * np.exp(- cog_diff) + 0.5 * np.exp(- sog_diff)
-        #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
+        pos_reward = np.exp(-pos_error * self.cfg['env']['reward_pos']) 
 
+        reward = pos_reward + pos_reward * (np.exp(- cog_diff) + np.exp(- sog_diff))
+        # print(f"reward {reward}")
+        #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
+        #reward = - pos_error
 
         #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
         if np.isnan(reward):
+            print("reward is nan")
             reward = -1
             
 
-        return - reward
+        return reward
     
 
     def step(self, action):
@@ -277,7 +317,7 @@ class ScmIrlEnv(gym.Env):
             self.truncated = False
             self.terminate = True
             print("agent out of the scenario")
-            self.reward = -1
+            self.reward = -10
         elif self.timestep >= self.end_time:
             self.truncated = True
             self.terminate = True
@@ -414,8 +454,27 @@ class ScmIrlEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
+
+        # self.start_time
+        # self.end_time
+        # self.sampling_time
+        
         self.timestep = self.start_time
-        self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.start_time)
+        if self.start_time_random:
+            time_steps = list(range(int(self.start_time), int(self.end_time - 2 * self.sampling_time ), int(self.sampling_time)))
+            random_time = random.choice(time_steps)
+            self.timestep = random_time
+        
+        self.agent_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
+        if self.start_pos_random:
+            north = random.uniform(self.scenario.north_min, self.scenario.north_max)
+            east = random.uniform(self.scenario.east_min, self.scenario.east_max)
+            cog = random.uniform(0, 2 * math.pi)
+            sog = random.uniform(0, 25)
+
+            self.agent_state = VesselState(timestamp=self.timestep - self.start_time, lat=north, lon=east, sog=sog, cog=cog)
+            pass
+
         self.truncated = False
         self.terminate = False
         self.done = False

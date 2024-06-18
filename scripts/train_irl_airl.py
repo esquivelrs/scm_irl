@@ -179,6 +179,27 @@ def train(cfg: DictConfig) -> None:
 
     gail_trainer.train(10_000)
 
+    #save lerner 
+
+
+    def make_env_eval(env_id, rank, seed=0):
+        def _init():
+            path = "../data/raw/scenario_2a66ceaf61"
+            path = os.path.join(utils.get_original_cwd(), path)
+            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
+            #env = FlatObservationWrapper(env)
+            print(env.observation_space)
+            if rank == 0:  # only add the RecordVideo wrapper for the first environment
+                env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
+            env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
+            return env
+        return _init
+
+    num_envs = 1
+    env = DummyVecEnv([make_env_eval(cfg.env_name, i) for i in range(num_envs)])
+
+
+
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 100, return_episode_rewards=True)
     
