@@ -9,7 +9,6 @@ defaults:
   - shiptypes/tanker
 
 policy: 'MlpPolicy' #MultiInputPolicy
-total_timesteps: 10
 env_name: 'ScmIrl-v0'
 
 # multi scenario
@@ -17,7 +16,7 @@ multi_scenario: true
 scenarios_path: "../data/raw/"
 scenario_id: "113851c356" # In case multi_scenario: False
 mmsi: 100 # In case a single scenario is used and unique mmsi
-num_envs: 3
+num_envs: 60
 
 # override env parameters
 env_params:
@@ -26,8 +25,8 @@ env_params:
 
 # irl parameters
 irl_params:
-  min_expert_demos: 100
-  total_timesteps: 10_000
+  min_expert_demos: 60
+  total_timesteps: 400_000
   learner_batch_size: 64
   learner_lr: 0.0004
 

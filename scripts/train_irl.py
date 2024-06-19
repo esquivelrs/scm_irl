@@ -3,6 +3,7 @@ import numpy as np
 from imitation.util.util import make_vec_env
 from imitation.data.wrappers import RolloutInfoWrapper
 from scm_irl.env.scm_irl_env import ScmIrlEnv
+from scm_irl.utils.process_scenario import Scenario
 from sllib.conversions.geo_conversions import north_east_to_lat_lon, mps2knots, lat_lon_to_north_east
 import numpy as np
 import wandb
@@ -37,38 +38,88 @@ import gymnasium as gym
 
 SEED = 42
 
+gym.register(
+    id='ScmIrl-v0',
+    entry_point='scm_irl.env:ScmIrlEnv',
+    max_episode_steps=1000,
+)
 
 
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
 def train(cfg: DictConfig) -> None:
 
     date_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    model_name = f"scm_2a66ceaf61_{date_time}"
+    model_name = f"{cfg.model}_{cfg.irl_algo}_{cfg.lerner_algo}_{date_time}"
 
     output_path = os.path.join("../outputs", model_name)
     os.makedirs(output_path, exist_ok=True)
 
-
-    num_envs = 1
-    path = "../data/raw/scenario_2a66ceaf61"
-    path = os.path.join(utils.get_original_cwd(), path)
-    gym.register(
-        id='ScmIrl-v0',
-        entry_point='scm_irl.env.scm_irl_env:ScmIrlEnv',
-        max_episode_steps=2000,
-        kwargs={"cfg": cfg, 
-                 "scenario_path": path,
-                 "mmsi": 215811000, 
-                 "awareness_zone": [200, 500, 200, 200], 
-                 #"start_time_reference": 1577905000.0, 
-                 #"end_time_override": 1577905020.0, 
-                 "render_mode": "rgb_array"}
-                 )
-
+    data_path = os.path.join(utils.get_original_cwd(), cfg.scenarios_path)
     
-    env = make_vec_env("ScmIrl-v0", n_envs=num_envs, 
-                       rng=np.random.default_rng(SEED))
+    dict_scenarios = {}
+
+    wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+    wandb.init(
+        name=model_name,
+        dir=output_path,
+        config=wandb_cfg,
+        sync_tensorboard=True,  # automatically upload SB3's tensorboard metrics to W&B
+        project="scm_irl",
+        monitor_gym=True,       # automatically upload gym environments' videos
+        save_code=True,
+    )
+
+    if not cfg.multi_scenario:
+        path_scenario = os.path.join(data_path, f"scenario_{cfg.scenario_id}")
+        scenario = Scenario(cfg, path_scenario)
+        if cfg.mmsi in scenario.get_valid_vessels():
+            dict_scenarios[f"{cfg.scenario_id}_{cfg.mmsi}"] = scenario
+        else:
+            for mmsi in scenario.get_valid_vessels():
+                dict_scenarios[f"{cfg.scenario_id}_{mmsi}"] = scenario
+
+    else:
+        for dir in os.listdir(data_path):
+            if os.path.isdir(os.path.join(data_path, dir)):
+                path_scenario = os.path.join(data_path, dir)
+                scenario_id = dir.split("_")[-1]
+                
+                scenario = Scenario(cfg, path_scenario)
+                for mmsi in scenario.get_valid_vessels():
+                    dict_scenarios[f"{scenario_id}_{mmsi}"] = scenario
+            #print(len(dict_scenarios))
+            if len(dict_scenarios) >= cfg.num_envs:
+                break
+
+
+    def make_env(mode = '', cfg_env = None, rank = 0, dict_scenarios = {}, seed=0, list_scenarios = [], video_enable = False):
+        def _init():
+            scenario_id = list_scenarios[rank]
+            scenario = dict_scenarios[scenario_id]
+            mmsi = int(scenario_id.split("_")[-1])
+            env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+
+            print(env)
+            #env = FlatObservationWrapper(env)
+            #print(env.observation_space)
+            if video_enable:  # only add the RecordVideo wrapper for the first environment
+                env = gym.wrappers.RecordVideo(env, name_prefix=f"{mode}_{rank}", video_folder=f"{output_path}/videos_{mode}")  # record videos
+            env = gym.wrappers.RecordEpisodeStatistics(env)  # rec0ord stats such as returns
+            return env
+        return _init
+
+    list_vessels_scenarios = list(dict_scenarios.keys())
+    num_scenarions_mmsi = len(list_vessels_scenarios)
+
+    if cfg.num_envs > num_scenarions_mmsi:
+        raise ValueError("The number of environments is greater than the number of possible scenarios")
     
+    cfg_env = cfg.copy()
+    cfg_env['env']['copy_expert'] = True
+    env = DummyVecEnv([make_env(mode='rollout', cfg_env=cfg, rank=i, seed=SEED,
+                                 dict_scenarios=dict_scenarios, 
+                                 list_scenarios=list_vessels_scenarios) for i in range(cfg.num_envs)])
+        
     print("############# Registered")
 
 
@@ -99,6 +150,7 @@ def train(cfg: DictConfig) -> None:
 
     #policy_registry.register("my-policy", load_policy)
 
+    print("############# Load Policy")
     expert = load_policy(
         "copy_action",
         organization="scm",
@@ -107,11 +159,11 @@ def train(cfg: DictConfig) -> None:
     )
 
 
-
+    print("############# rollouts")
     rollouts = rollout.rollout(
         expert,
         env,
-        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=20),
+        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=cfg['irl_params']['min_expert_demos']),
         unwrap=False,
         rng=np.random.default_rng(SEED),
         exclude_infos=True,
@@ -120,26 +172,31 @@ def train(cfg: DictConfig) -> None:
     # print("Rollouts")
     # print(rollouts)
 
-
+    print("############# learner")
     learner = PPO(
         env=env,
         policy=MlpPolicy,
-        batch_size=64,
+        batch_size=cfg['irl_params']['learner_batch_size'],
         ent_coef=0.0,
-        learning_rate=0.0004,
+        learning_rate=cfg['irl_params']['learner_lr'],
         gamma=0.95,
         n_epochs=5,
         seed=SEED,
+        tensorboard_log=f"{output_path}/algo",
+        verbose=1,
     )
 
+    print("############# reward_net")
     reward_net = BasicRewardNet(
         observation_space=env.observation_space,
         action_space=env.action_space,
         normalize_input_layer=RunningNorm,
     )
+
+    print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=20,
+        demo_batch_size=512,
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
@@ -147,19 +204,41 @@ def train(cfg: DictConfig) -> None:
         reward_net=reward_net,
         allow_variable_horizon=True,
     )
-    learner_rewards_before_training, _ = evaluate_policy(
-        learner, env, 100, return_episode_rewards=True)
-    
-    print("Rewards before training")
-    print(learner_rewards_before_training)
 
-    gail_trainer.train(10_000)
+    # cfg_env = cfg.copy()
+    # cfg_env['env']['copy_expert'] = False
+    # env = DummyVecEnv([make_env(mode='pre', cfg_env=cfg_env, rank=i, seed=SEED,
+    #                              dict_scenarios=dict_scenarios, 
+    #                              list_scenarios=list_vessels_scenarios) for i in range(cfg.num_envs)])
+
+    # print("############# evaluate_policy")
+    # learner_rewards_before_training, _ = evaluate_policy(
+    #     learner, env, 5, return_episode_rewards=True)
+    
+    # print("Rewards before training")
+    # print(learner_rewards_before_training)
+
+    print("############# Train")
+    gail_trainer.train(cfg['irl_params']['total_timesteps'])
+
+
+
+    cfg_env = cfg.copy()
+    cfg_env['env']['copy_expert'] = False
+    env_post = DummyVecEnv([make_env(mode='post', cfg_env=cfg_env, rank=i, seed=SEED,
+                                 dict_scenarios=dict_scenarios, 
+                                 list_scenarios=list_vessels_scenarios, video_enable = True) for i in range(cfg.num_envs)])
 
     learner_rewards_after_training, _ = evaluate_policy(
-        learner, env, 100, return_episode_rewards=True)
+        learner, env_post, 5, return_episode_rewards=True)
     
     print("Rewards after training")
     print(learner_rewards_after_training)
+
+    wandb.log({"Rewards after training": learner_rewards_after_training})
+
+    # At the end of your script, optionally
+    wandb.finish()
 
 
 if __name__ == "__main__":

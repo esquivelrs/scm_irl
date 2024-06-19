@@ -197,6 +197,7 @@ def train(cfg: DictConfig) -> None:
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
+        allow_variable_horizon=True,
     )
 
     print("############# evaluate_policy")

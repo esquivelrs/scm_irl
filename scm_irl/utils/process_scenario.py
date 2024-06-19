@@ -94,6 +94,9 @@ class Scenario:
             return states[time]
         else:
             # TODO: Do de intepolation insted of return the previuos state
+            # print(self.scenario_id)
+            # print(mmsi)
+            # print(time)
             return states[time - self.sampling_time]
     
     def get_vessel_neighbor_states(self, mmsi, neighbor_mmsi):

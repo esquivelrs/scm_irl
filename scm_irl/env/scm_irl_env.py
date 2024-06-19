@@ -47,8 +47,8 @@ class ScmIrlEnv(gym.Env):
         #self.scenario = Scenario(cfg, scenario_path)
         self.scenario = scenario
 
-        self.sampling_time = self.scenario.sampling_time
-
+        #self.sampling_time = self.scenario.sampling_time # TODO: clean data set, some scenarios have different value in sampling scenario_44d051b172
+        self.sampling_time = 10
         mmsis = []
         if mmsi_in_collision:
             mmsis = self.scenario.collision_mmsis
@@ -73,7 +73,7 @@ class ScmIrlEnv(gym.Env):
 
             self.timestep = self.start_time
 
-            self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
+            self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) - 2 * self.sampling_time
             if end_time_override is not None:
                 self.end_time = end_time_override
             
@@ -115,12 +115,8 @@ class ScmIrlEnv(gym.Env):
             self.bicycle_model = cfg['env']['bicycle_model']
             self.copy_expert = cfg['env']['copy_expert']
             self.dist_metric = cfg['env']['dist_metric']
-<<<<<<< HEAD
-            self.start_random = cfg['env']['start_random']
-=======
             self.start_time_random = cfg['env']['start_time_random']
             self.start_pos_random = cfg['env']['start_pos_random']
->>>>>>> bc609ec (random pos)
 
 
             self.truncated = False
@@ -134,7 +130,7 @@ class ScmIrlEnv(gym.Env):
             #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
             #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
             # })
-            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
             #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
 
 
@@ -223,20 +219,20 @@ class ScmIrlEnv(gym.Env):
 
 
     def _get_obs(self):
-        observation_matrix = self._get_observation_matrix()
+        # observation_matrix = self._get_observation_matrix()
 
-        if not np.isnan(observation_matrix).any():
-            self.observation_matrix = observation_matrix
-            # scale channel 0 and 1 to 255
-            self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
-            self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
+        # if not np.isnan(observation_matrix).any():
+        #     self.observation_matrix = observation_matrix
+        #     # scale channel 0 and 1 to 255
+        #     self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
+        #     self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
 
         
-        agent_obs = self.scenario.relative_state(expert_state, self.agent_state)
+        agent_obs = self.scenario.relative_state(self.agent_final_location, self.agent_state)
         agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
         # print(f"agent_obs {agent_obs}")
         # print(f"expert_obs {expert_obs}")
@@ -252,8 +248,7 @@ class ScmIrlEnv(gym.Env):
         #         'expert_state': expert_obs,
         #         'target': target_state}
       
-        obs = {'agent_state': agent_obs, 
-                'target': target_state}
+        obs = {'agent_state': agent_obs}
         #obs = {'expert_action': expert_action}
 
         transformed_obs_values = [np.array(v) for v in obs.values()]
@@ -264,9 +259,9 @@ class ScmIrlEnv(gym.Env):
         #obs = np.expand_dims(obs, axis=0)
 
         terminate = False
-        if self.observation_matrix is None or np.isnan(agent_obs).any() or np.isnan(observation_matrix).any():
-            print(f"######## NAN agent_obs: {agent_obs}, observation_matrix: {observation_matrix}")
-            terminate = True
+        # if self.observation_matrix is None or np.isnan(agent_obs).any() or np.isnan(observation_matrix).any():
+        #     print(f"######## NAN agent_obs: {agent_obs}, observation_matrix: {observation_matrix}")
+        #     terminate = True
 
         return obs, terminate
  
@@ -323,7 +318,7 @@ class ScmIrlEnv(gym.Env):
             or term):
             self.truncated = False
             self.terminate = True
-            print("agent out of the scenario")
+            # print("agent out of the scenario")
             self.reward = -10
         elif self.timestep >= self.end_time:
             self.truncated = True
