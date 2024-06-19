@@ -470,7 +470,7 @@ class ScmIrlEnv(gym.Env):
             north = random.uniform(self.scenario.north_min, self.scenario.north_max)
             east = random.uniform(self.scenario.east_min, self.scenario.east_max)
             cog = random.uniform(0, 2 * math.pi)
-            sog = random.uniform(0, 25)
+            sog = random.uniform(0, 20)
 
             self.agent_state = VesselState(timestamp=self.timestep - self.start_time, lat=north, lon=east, sog=sog, cog=cog)
             pass

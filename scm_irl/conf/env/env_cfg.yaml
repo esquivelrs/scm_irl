@@ -1,13 +1,13 @@
 # Environment configuration
-bicycle_model: true
+bicycle_model: false
 copy_expert: false
 dist_metric: l2
-start_time_random: true
-start_pos_random: true
+start_time_random: false
+start_pos_random: false
 
 # Environment parameters
-sog_scale: 13
-cog_scale: 1
+sog_scale: 20 #13
+cog_scale: 2
 depth_max: 100
 seamark_max: 50
 vessel_types_max: 5
