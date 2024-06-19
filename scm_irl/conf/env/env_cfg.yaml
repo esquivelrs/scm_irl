@@ -1,7 +1,7 @@
 
 # Environment configuration
 bicycle_model: false
-copy_expert: false
+copy_expert: true
 dist_metric: l1
 start_random: true
 
