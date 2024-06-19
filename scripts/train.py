@@ -36,9 +36,9 @@ def train(cfg: DictConfig) -> None:
 
     def make_env(env_id, rank, seed=0):
         def _init():
-            path = "../data/raw/scenario_2a66ceaf61"
+            path = "../data/raw/scenario_113851c356" # scenario_2a66ceaf61 scenario_113851c356
             path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+            env = ScmIrlEnv(cfg, path, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
             #env = FlatObservationWrapper(env)
             print(env.observation_space)
             if rank == 0:  # only add the RecordVideo wrapper for the first environment

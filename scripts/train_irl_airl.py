@@ -50,7 +50,7 @@ gym.register(
 def train(cfg: DictConfig) -> None:
 
     date_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    model_name = f"scm_2a66ceaf61_{date_time}"
+    model_name = f"{cfg.model}_{date_time}"
 
     output_path = os.path.join("../outputs", model_name)
     os.makedirs(output_path, exist_ok=True)
