@@ -3,6 +3,7 @@ import numpy as np
 from imitation.util.util import make_vec_env
 from imitation.data.wrappers import RolloutInfoWrapper
 from scm_irl.env.scm_irl_env import ScmIrlEnv
+from scm_irl.utils.process_scenario import Scenario
 from sllib.conversions.geo_conversions import north_east_to_lat_lon, mps2knots, lat_lon_to_north_east
 import numpy as np
 import wandb
@@ -44,55 +45,76 @@ gym.register(
 )
 
 
-
-
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
 def train(cfg: DictConfig) -> None:
 
     date_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    model_name = f"scm_2a66ceaf61_{date_time}"
+    model_name = f"{cfg.model}_{cfg.irl_algo}_{cfg.lerner_algo}_{date_time}"
 
     output_path = os.path.join("../outputs", model_name)
     os.makedirs(output_path, exist_ok=True)
 
-    def make_env(env_id, rank, seed=0):
+    data_path = os.path.join(utils.get_original_cwd(), cfg.scenarios_path)
+    
+    dict_scenarios = {}
+
+    wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+    wandb.init(
+        name=model_name,
+        dir=output_path,
+        config=wandb_cfg,
+        sync_tensorboard=True,  # automatically upload SB3's tensorboard metrics to W&B
+        project="scm_irl",
+        monitor_gym=True,       # automatically upload gym environments' videos
+        save_code=True,
+    )
+
+    if not cfg.multi_scenario:
+        path_scenario = os.path.join(data_path, f"scenario_{cfg.scenario_id}")
+        scenario = Scenario(cfg, path_scenario)
+        if cfg.mmsi in scenario.get_valid_vessels():
+            dict_scenarios[f"{cfg.scenario_id}_{cfg.mmsi}"] = scenario
+        else:
+            for mmsi in scenario.get_valid_vessels():
+                dict_scenarios[f"{cfg.scenario_id}_{mmsi}"] = scenario
+
+    else:
+        for dir in os.listdir(data_path):
+            if os.path.isdir(os.path.join(data_path, dir)):
+                path_scenario = os.path.join(data_path, dir)
+                scenario_id = dir.split("_")[-1]
+                
+                scenario = Scenario(cfg, path_scenario)
+                for mmsi in scenario.get_valid_vessels():
+                    dict_scenarios[f"{scenario_id}_{mmsi}"] = scenario
+
+
+    def make_env(env_id, rank, dict_scenarios = {}, seed=0, list_scenarios = []):
         def _init():
-            path = "../data/raw/scenario_2a66ceaf61"
-            path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="human")
+            scenario_id = list_scenarios[rank]
+            scenario = dict_scenarios[scenario_id]
+            mmsi = int(scenario_id.split("_")[-1])
+            env = ScmIrlEnv(cfg, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+
+            print(env)
             #env = FlatObservationWrapper(env)
-            print(env.observation_space)
-            # if rank == 0:  # only add the RecordVideo wrapper for the first environment
-            #     env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
+            #print(env.observation_space)
+            if rank == 0:  # only add the RecordVideo wrapper for the first environment
+                env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
             env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
             return env
         return _init
 
-    num_envs = 1
-    env = DummyVecEnv([make_env(cfg.env_name, i) for i in range(num_envs)])
+    list_vessels_scenarios = list(dict_scenarios.keys())
+    num_scenarions_mmsi = len(list_vessels_scenarios)
 
+    if cfg.num_envs > num_scenarions_mmsi:
+        raise ValueError("The number of environments is greater than the number of possible scenarios")
     
-    # path = "../data/raw/scenario_2a66ceaf61"
-    # path = os.path.join(utils.get_original_cwd(), path)
-    # # env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, end_time_override = 1577905020.0, render_mode="rgb_array")
-
-    # gym.register(
-    #     id='ScmIrl-v0',
-    #     entry_point='scm_irl.env.scm_irl_env:ScmIrlEnv',
-    #     max_episode_steps=2000,
-    #     kwargs={"cfg": cfg, 
-    #              "scenario_path": path,
-    #              "mmsi": 215811000, 
-    #              "awareness_zone": [200, 500, 200, 200], 
-    #              #"start_time_reference": 1577905000.0, 
-    #              #"end_time_override": 1577905020.0, 
-    #              "render_mode": "rgb_array"}
-    #              )
-
-    
-    # env = make_vec_env("ScmIrl-v0", n_envs=num_envs, 
-    #                    rng=np.random.default_rng(SEED))
-    
+    env = DummyVecEnv([make_env(cfg.env_name, rank=i, seed=SEED,
+                                 dict_scenarios=dict_scenarios, 
+                                 list_scenarios=list_vessels_scenarios) for i in range(cfg.num_envs)])
+        
     print("############# Registered")
 
 
@@ -136,7 +158,7 @@ def train(cfg: DictConfig) -> None:
     rollouts = rollout.rollout(
         expert,
         env,
-        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=2),
+        sample_until=rollout.make_sample_until(min_timesteps=None, min_episodes=cfg['irl_params']['min_expert_demos']),
         unwrap=False,
         rng=np.random.default_rng(SEED),
         exclude_infos=True,
@@ -149,12 +171,14 @@ def train(cfg: DictConfig) -> None:
     learner = PPO(
         env=env,
         policy=MlpPolicy,
-        batch_size=64,
+        batch_size=cfg['irl_params']['learner_batch_size'],
         ent_coef=0.0,
-        learning_rate=0.0004,
+        learning_rate=cfg['irl_params']['learner_lr'],
         gamma=0.95,
         n_epochs=5,
         seed=SEED,
+        tensorboard_log=f"{output_path}/algo",
+        verbose=1,
     )
 
     print("############# reward_net")
@@ -167,13 +191,12 @@ def train(cfg: DictConfig) -> None:
     print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=2,
+        demo_batch_size=1024,
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
-        allow_variable_horizon=True,
     )
 
     print("############# evaluate_policy")
@@ -183,34 +206,18 @@ def train(cfg: DictConfig) -> None:
     print("Rewards before training")
     print(learner_rewards_before_training)
 
-    gail_trainer.train(10_000)
-
-    #save lerner 
-
-
-    def make_env_eval(env_id, rank, seed=0):
-        def _init():
-            path = "../data/raw/scenario_2a66ceaf61"
-            path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], start_time_reference=1577905000.0, render_mode="rgb_array")
-            #env = FlatObservationWrapper(env)
-            print(env.observation_space)
-            if rank == 0:  # only add the RecordVideo wrapper for the first environment
-                env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
-            env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
-            return env
-        return _init
-
-    num_envs = 1
-    env = DummyVecEnv([make_env_eval(cfg.env_name, i) for i in range(num_envs)])
-
-
+    gail_trainer.train(cfg['irl_params']['total_timesteps'])
 
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env, 5, return_episode_rewards=True)
     
     print("Rewards after training")
     print(learner_rewards_after_training)
+
+    wandb.log({"Rewards after training": learner_rewards_after_training})
+
+    # At the end of your script, optionally
+    wandb.finish()
 
 
 if __name__ == "__main__":

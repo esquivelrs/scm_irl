@@ -1,3 +1,8 @@
+model: 'scm_irl'
+
+irl_algo: 'gail'
+lerner_algo: 'ppo'
+
 defaults:
   - env/scenario
   - env/env_cfg
@@ -8,11 +13,23 @@ total_timesteps: 10
 env_name: 'ScmIrl-v0'
 
 # multi scenario
-multi_scenario: false
+multi_scenario: true
 scenarios_path: "../data/raw/"
-scenario_name: "scenario_2a66ceaf61" # In case multi_scenario: False
-number_envs: 1
+scenario_id: "113851c356" # In case multi_scenario: False
+mmsi: 100 # In case a single scenario is used and unique mmsi
+num_envs: 3
 
+# override env parameters
+env_params:
+  copy_expert: true
+  start_time_random: true
+
+# irl parameters
+irl_params:
+  min_expert_demos: 100
+  total_timesteps: 10_000
+  learner_batch_size: 64
+  learner_lr: 0.0004
 
 
 

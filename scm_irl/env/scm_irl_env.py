@@ -34,14 +34,18 @@ def modulate_color(color, modulation):
 class ScmIrlEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1, dict_scenarios={}):
+    def __init__(self, cfg=None, scenario = None, render_mode = None, 
+                 start_time_reference = None, end_time_override = None, 
+                 mmsi = None, mmsi_in_collision = False, 
+                 awareness_zone = [1000, 1000, 1000, 1000], resolution = 1):
         self.cfg = cfg
         self.episode_number = 0
         self.render_mode = render_mode
 
-        self.scenario_path = scenario_path
+        #self.scenario_path = scenario_path
 
-        self.scenario = Scenario(cfg, scenario_path)
+        #self.scenario = Scenario(cfg, scenario_path)
+        self.scenario = scenario
 
         self.sampling_time = self.scenario.sampling_time
 
@@ -52,10 +56,12 @@ class ScmIrlEnv(gym.Env):
             mmsis = self.scenario.mmsis
             
 
-        if mmsi is None:
-            mmsi = self.select_valid_mmsi(mmsis, scenario_path, dict_scenarios, self.cfg)
+        
+        mmsi = self.select_valid_mmsi(mmsis, mmsi, self.cfg)
 
         self.mmsi = mmsi # Return None if no valid mmsi is found
+
+        # TODO: clean this part of the code --> if redundant
 
         if self.mmsi in mmsis:
             self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
@@ -146,28 +152,24 @@ class ScmIrlEnv(gym.Env):
             self.clock = None
 
 
-    def select_valid_mmsi(self, mmsis, scenario_path, dict_scenarios, cfg):
-
+    def select_valid_mmsi(self, mmsis, mmsi, cfg):
+        
         # Filter MMSIs based on ship type being in valid vessels
         valid_mmsis = [mmsi for mmsi in mmsis if self.scenario.get_vessel_metadata(mmsi).ship_type in cfg['env']['valid_vessels']]
         
         if not valid_mmsis:
-            print(f"no valid mmsi in the scenario {scenario_path}")
+            print(f"no valid mmsi in the scenario {self.scenario}")
             return None
 
-        # Exclude already used MMSIs if dict_scenarios is provided
-        if self.scenario.scenario_id not in dict_scenarios:
-            return np.random.choice(valid_mmsis)
-        
-        mmsi_used = dict_scenarios.get(self.scenario.scenario_id, [])
-        remaining_mmsis = [mmsi for mmsi in valid_mmsis if mmsi not in mmsi_used]
-        
-        if not remaining_mmsis:
-            print(f"no more mmsi to use in the scenario {scenario_path}")
-            return None
+        if mmsi is not None or mmsi != 0:
+            if mmsi in valid_mmsis:
+                return mmsi
+            else:
+                print(f"mmsi {mmsi} is not valid in the scenario {self.scenario}")
+                return None
 
-        # Randomly select from the remaining valid MMSIs
-        return np.random.choice(remaining_mmsis)     
+        return np.random.choice(valid_mmsis)
+  
     
     def scale_coords(self, coords, north_min, north_max, east_min, east_max, height, width):
         north_range = north_max - north_min
@@ -721,10 +723,10 @@ class ScmIrlEnv(gym.Env):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
-        
-    def load_trajectories(self, scenario_path):
-        pass
+
     
     def calculate_reward(self, action):
         pass
     
+    def __str__(self):
+        return f"Scenario_id: {self.scenario.scenario_id}, mmsi {self.mmsi}"

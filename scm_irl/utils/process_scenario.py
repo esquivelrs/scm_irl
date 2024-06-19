@@ -77,6 +77,13 @@ class Scenario:
     def get_vessel_metadata(self, mmsi):
         return self.vessels[mmsi]["metadata"]
 
+    def get_valid_vessels(self):
+        valid_vessels = []
+        for mmsi in self.mmsis:
+            if self.get_vessel_metadata(mmsi).ship_type in self.cfg['env']['valid_vessels']:
+                valid_vessels.append(mmsi)
+        return valid_vessels
+            
     # get the states of a vessel
     def get_vessel_states(self, mmsi):
         return self.vessels[mmsi]["states"]
@@ -269,6 +276,8 @@ class Scenario:
 
         return nodes_val_list, colors
 
+    def __str__(self):
+        return f"Scenario {self.scenario_id} with {self.n_vessels} vessels"
         
         
 
