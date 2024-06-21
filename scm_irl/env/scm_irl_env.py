@@ -65,6 +65,17 @@ class ScmIrlEnv(gym.Env):
 
         if self.mmsi in mmsis:
             self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
+            #print(metadata)
+
+            # TODO: Change this to support multiple vessels types
+            vessel_type = 0 
+            if self.vessel_metadata.ship_type == 'Tanker':
+                vessel_type = 1 
+
+            self.vessel_params = np.array([self.vessel_metadata.width, 
+                                           self.vessel_metadata.length, 
+                                           self.vessel_metadata.draught, 
+                                           self.vessel_metadata.nav_status, vessel_type])
 
             if start_time_reference is None:
                 self.start_time = next(iter(self.scenario.vessels[mmsi]['states']))
@@ -255,25 +266,18 @@ class ScmIrlEnv(gym.Env):
         #         'expert_state': expert_obs,
         #         'target': target_state}
 
-        metadata = self.scenario.get_vessel_metadata(self.mmsi)
 
-        # TODO: Change this to support multiple vessels types
-        vessel_type = 0 
-        if metadata['ship_type'] == 'Tanker':
-           vessel_type = 1 
-
-        vessel_params = np.array([metadata['width'], metadata['length'], metadata['draught'], metadata['nav_status'], vessel_type])
       
         obs = {'observation_matrix': self.observation_matrix,
                'agent_state': agent2target,
-               'vessel_params' : vessel_params}
+               'vessel_params' : self.vessel_params}
         
         #obs = {'expert_action': expert_action}
 
-        transformed_obs_values = [np.array(v) for v in obs.values()]
+        # transformed_obs_values = [np.array(v) for v in obs.values()]
 
-        # Concatenate all values into a single vector
-        obs = np.concatenate(transformed_obs_values)
+        # # Concatenate all values into a single vector
+        # obs = np.concatenate(transformed_obs_values)
         # add one level of nesting
         #obs = np.expand_dims(obs, axis=0)
 

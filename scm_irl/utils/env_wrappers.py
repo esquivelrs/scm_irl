@@ -1,4 +1,5 @@
 import gymnasium as gym
+from gymnasium.spaces import Box, Dict
 import torch
 import numpy as np
 from torchvision.models import resnet18
@@ -35,38 +36,26 @@ class NetObservationWrapper(gym.ObservationWrapper):
         return transformed_obs
 
 
+
 class FlatObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        # observation space
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(self.observation_space['agent_state'].shape[0] +
-                   self.observation_space['expert_state'].shape[0] +
-                   self.observation_space['target'].shape[0],),
+        self.original_observation_space = env.observation_space
+        
+        # Calculate the total flat size
+        total_size = sum(np.prod(space.shape) for space in env.observation_space.spaces.values())
+        
+        # Define the new flat observation space
+        self.observation_space = Box(
+            low=-np.inf, 
+            high=np.inf, 
+            shape=(total_size,), 
             dtype=np.float32
         )
 
-    def observation(self, obs):
-        # Transform the observation here
-        self.obs = self.transform_observation(obs)
-        return self.obs
-
-    def transform_observation(self, obs):
-        # Define your transformation here
-        # This is just a placeholder example
-        transformed_obs = {
-            'agent_state': obs['agent_state'],
-            'expert_state': obs['expert_state'],
-            'target': obs['target']
-        }
-        # Convert all values to numpy arrays
-        transformed_obs_values = [np.array(v) for v in transformed_obs.values()]
-
-        # Concatenate all values into a single vector
-        concatenated_vector = np.concatenate(transformed_obs_values)
-        print('concatenated_vector.shape')
-        print(concatenated_vector.shape)
-
-        return concatenated_vector
+    def observation(self, observation):
+        # Flatten each part of the observation and concatenate them
+        flat_obs = np.concatenate([
+            np.array(observation[key]).flatten() for key in self.original_observation_space.spaces
+        ])
+        return flat_obs

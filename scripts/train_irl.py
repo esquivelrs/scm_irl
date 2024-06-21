@@ -100,7 +100,7 @@ def train(cfg: DictConfig) -> None:
             env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
 
             print(env)
-            #env = FlatObservationWrapper(env)
+            env = FlatObservationWrapper(env)
             #print(env.observation_space)
             if rank < 5 and video_enable:  # only add the RecordVideo wrapper for the first environment
                 env = gym.wrappers.RecordVideo(env, name_prefix=f"{mode}_{rank}", video_folder=f"{output_path}/videos_{mode}")  # record videos
@@ -172,6 +172,8 @@ def train(cfg: DictConfig) -> None:
     # print("Rollouts")
     # print(rollouts)
 
+    #exit()
+
     print("############# learner")
     learner = PPO(
         env=env,
@@ -193,6 +195,8 @@ def train(cfg: DictConfig) -> None:
         normalize_input_layer=RunningNorm,
     )
 
+    #print("Observation Space:", env.observation_space)
+    #exit()
     print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
