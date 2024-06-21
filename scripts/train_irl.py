@@ -102,7 +102,7 @@ def train(cfg: DictConfig) -> None:
             print(env)
             #env = FlatObservationWrapper(env)
             #print(env.observation_space)
-            if video_enable:  # only add the RecordVideo wrapper for the first environment
+            if rank < 5 and video_enable:  # only add the RecordVideo wrapper for the first environment
                 env = gym.wrappers.RecordVideo(env, name_prefix=f"{mode}_{rank}", video_folder=f"{output_path}/videos_{mode}")  # record videos
             env = gym.wrappers.RecordEpisodeStatistics(env)  # rec0ord stats such as returns
             return env
