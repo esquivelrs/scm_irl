@@ -19,10 +19,12 @@ mmsi: 100 # In case a single scenario is used and unique mmsi
 num_envs: 5
 
 # override env parameters
-env_params:
-  copy_expert: true
-  start_time_random: false
-  observation_matrix: false
+# env_params:
+#   copy_expert: true
+#   start_time_random: false
+#   observation_matrix: false
+
+resnet_wrapper: true
 
 # irl parameters
 irl_params:

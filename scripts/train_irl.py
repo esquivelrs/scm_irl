@@ -19,7 +19,7 @@ import hydra
 from hydra import utils
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from scm_irl.utils.env_wrappers import FlatObservationWrapper
+from scm_irl.utils.env_wrappers import FlatObservationWrapper, ResNetObservationWrapper
 from imitation.util import util
 from imitation.policies.serialize import policy_registry
 
@@ -43,6 +43,8 @@ gym.register(
     entry_point='scm_irl.env:ScmIrlEnv',
     max_episode_steps=1000,
 )
+
+
 
 
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
@@ -99,7 +101,9 @@ def train(cfg: DictConfig) -> None:
             mmsi = int(scenario_id.split("_")[-1])
             env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
 
-            print(env)
+            #print(env)
+            if cfg_env['env']['observation_matrix'] and cfg_env['resnet_wrapper']:
+                env = ResNetObservationWrapper(env)
             env = FlatObservationWrapper(env)
             #print(env.observation_space)
             if rank < 5 and video_enable:  # only add the RecordVideo wrapper for the first environment
@@ -172,6 +176,8 @@ def train(cfg: DictConfig) -> None:
     # print("Rollouts")
     # print(rollouts)
 
+    #exit()
+
     print("############# learner")
     learner = PPO(
         env=env,
@@ -193,10 +199,12 @@ def train(cfg: DictConfig) -> None:
         normalize_input_layer=RunningNorm,
     )
 
+    #print("Observation Space:", env.observation_space)
+    #exit()
     print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=512,
+        demo_batch_size=cfg['irl_params']['demo_batch_size'],
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
