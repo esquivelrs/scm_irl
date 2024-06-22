@@ -10,9 +10,13 @@ env_name: 'ScmIrl-v0'
 # multi scenario
 multi_scenario: true
 scenarios_path: "../data/raw/"
-scenario_name: "scenario_2a66ceaf61" # In case multi_scenario: False
-number_envs: 5
+scenario_id: "113851c356" # In case multi_scenario: False
+mmsi: 100 # In case a single scenario is used and unique mmsi
+num_envs: 1
+
+# override env parameters
+env_params:
+  copy_expert: true
+  start_time_random: true
 
 
-
-# add nodes from ./env/nodes.yaml

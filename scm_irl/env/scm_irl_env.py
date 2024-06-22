@@ -142,11 +142,17 @@ class ScmIrlEnv(gym.Env):
             #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
             # })
             
-            self.observation_space = spaces.Dict({
-                'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
-                'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
-                'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
-            })
+            if cfg['env']['observation_matrix']:
+                self.observation_space = spaces.Dict({
+                    'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
+            else:
+                self.observation_space = spaces.Dict({
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
             
             #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
             #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
@@ -267,10 +273,13 @@ class ScmIrlEnv(gym.Env):
         #         'target': target_state}
 
 
-      
-        obs = {'observation_matrix': self.observation_matrix,
-               'agent_state': agent2target,
-               'vessel_params' : self.vessel_params}
+        if self.cfg['env']['observation_matrix']:
+            obs = {'observation_matrix': self.observation_matrix,
+                   'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
+        else:
+            obs = {'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
         
         #obs = {'expert_action': expert_action}
 
