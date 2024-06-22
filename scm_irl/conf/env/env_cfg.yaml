@@ -4,9 +4,10 @@ copy_expert: false
 dist_metric: l2
 start_time_random: false
 start_pos_random: false
+observation_matrix: false
 
 # Environment parameters
-sog_scale: 20 #13
+sog_scale: 40 #13
 cog_scale: 2
 depth_max: 100
 seamark_max: 50

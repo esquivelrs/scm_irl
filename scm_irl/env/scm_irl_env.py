@@ -66,6 +66,17 @@ class ScmIrlEnv(gym.Env):
         if self.mmsi in mmsis:
             self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
 
+
+            # TODO: Change this to support multiple vessels types
+            vessel_type = 0 
+            if self.vessel_metadata.ship_type == 'Tanker':
+                vessel_type = 1 
+
+            self.vessel_params = np.array([self.vessel_metadata.width, 
+                                           self.vessel_metadata.length, 
+                                           self.vessel_metadata.draught, 
+                                           self.vessel_metadata.nav_status, vessel_type])
+
             if start_time_reference is None:
                 self.start_time = next(iter(self.scenario.vessels[mmsi]['states']))
             else:
@@ -130,8 +141,20 @@ class ScmIrlEnv(gym.Env):
             #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
             #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
             # })
-            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
+            #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
             #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
+
+            if cfg['env']['observation_matrix']:
+                self.observation_space = spaces.Dict({
+                    'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
+            else:
+                self.observation_space = spaces.Dict({
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
 
 
             self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
@@ -219,21 +242,21 @@ class ScmIrlEnv(gym.Env):
 
 
     def _get_obs(self):
-        # observation_matrix = self._get_observation_matrix()
+        observation_matrix = self._get_observation_matrix()
 
-        # if not np.isnan(observation_matrix).any():
-        #     self.observation_matrix = observation_matrix
-        #     # scale channel 0 and 1 to 255
-        #     self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
-        #     self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
+        if observation_matrix is not None and not np.isnan(observation_matrix).any():
+            self.observation_matrix = observation_matrix
+            # scale channel 0 and 1 to 255
+            self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
+            self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
         
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
 
         
-        agent_obs = self.scenario.relative_state(self.agent_final_location, self.agent_state)
-        agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
+        agent2target = self.scenario.relative_state(self.agent_final_location, self.agent_state)
+        agent2target = np.array([agent2target.lat, agent2target.lon, agent2target.sog, agent2target.cog])
         # print(f"agent_obs {agent_obs}")
         # print(f"expert_obs {expert_obs}")
 
@@ -248,20 +271,30 @@ class ScmIrlEnv(gym.Env):
         #         'expert_state': expert_obs,
         #         'target': target_state}
       
-        obs = {'agent_state': agent_obs}
+        #obs = {'agent_state': agent_obs}
+
+        if self.cfg['env']['observation_matrix']:
+            obs = {'observation_matrix': self.observation_matrix,
+                   'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
+        else:
+            obs = {'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
         #obs = {'expert_action': expert_action}
 
-        transformed_obs_values = [np.array(v) for v in obs.values()]
+        #transformed_obs_values = [np.array(v) for v in obs.values()]
 
         # Concatenate all values into a single vector
-        obs = np.concatenate(transformed_obs_values)
+        # obs = np.concatenate(transformed_obs_values)
         # add one level of nesting
         #obs = np.expand_dims(obs, axis=0)
 
         terminate = False
-        # if self.observation_matrix is None or np.isnan(agent_obs).any() or np.isnan(observation_matrix).any():
-        #     print(f"######## NAN agent_obs: {agent_obs}, observation_matrix: {observation_matrix}")
-        #     terminate = True
+        if (observation_matrix is None or 
+            np.isnan(agent2target).any() or 
+            (observation_matrix is not None and np.isnan(observation_matrix).any())):
+            #print(f"######## NAN agent_obs: {agent2target}, observation_matrix: {observation_matrix}")
+            terminate = True
 
         return obs, terminate
  

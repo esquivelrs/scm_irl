@@ -16,20 +16,18 @@ multi_scenario: true
 scenarios_path: "../data/raw/"
 scenario_id: "113851c356" # In case multi_scenario: False
 mmsi: 100 # In case a single scenario is used and unique mmsi
-num_envs: 60
+num_envs: 5
 
 # override env parameters
 env_params:
   copy_expert: true
-  start_time_random: true
+  start_time_random: false
+  observation_matrix: false
 
 # irl parameters
 irl_params:
-  min_expert_demos: 60
+  min_expert_demos: 5
+  demo_batch_size: 64
   total_timesteps: 400_000
   learner_batch_size: 64
   learner_lr: 0.0004
-
-
-
-# add nodes from ./env/nodes.yaml
