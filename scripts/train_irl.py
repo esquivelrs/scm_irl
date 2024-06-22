@@ -45,6 +45,42 @@ gym.register(
 )
 
 
+def select_learner_algorithm(cfg, env, output_path):
+    if cfg.learner_algo == "ppo":
+        return PPO(
+            env=env,
+            policy=MlpPolicy,
+            batch_size=cfg['irl_params']['learner_batch_size'],
+            ent_coef=0.0,
+            learning_rate=cfg['irl_params']['learner_lr'],
+            gamma=0.95,
+            n_epochs=5,
+            seed=SEED,
+            tensorboard_log=f"{output_path}/algo",
+            verbose=1,
+        )
+    # Add more algorithms here as elif blocks
+    else:
+        raise ValueError(f"Unsupported learner algorithm: {cfg.learner_algo}")
+
+
+def select_trainer(cfg, demonstrations, env, learner, reward_net):
+    if cfg.irl_algo == "gail":
+        return GAIL(
+            demonstrations=demonstrations,
+            demo_batch_size=512,
+            gen_replay_buffer_capacity=512,
+            n_disc_updates_per_round=8,
+            venv=env,
+            gen_algo=learner,
+            reward_net=reward_net,
+            allow_variable_horizon=True,
+        )
+    # Add more trainers here as elif blocks
+    else:
+        raise ValueError(f"Unsupported IRL algorithm: {cfg.irl_algo}")
+
+
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
 def train(cfg: DictConfig) -> None:
 
@@ -100,7 +136,7 @@ def train(cfg: DictConfig) -> None:
             env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
 
             print(env)
-            env = FlatObservationWrapper(env)
+            #env = FlatObservationWrapper(env)
             #print(env.observation_space)
             if rank < 5 and video_enable:  # only add the RecordVideo wrapper for the first environment
                 env = gym.wrappers.RecordVideo(env, name_prefix=f"{mode}_{rank}", video_folder=f"{output_path}/videos_{mode}")  # record videos
@@ -200,7 +236,7 @@ def train(cfg: DictConfig) -> None:
     print("############# gail_trainer")
     gail_trainer = GAIL(
         demonstrations=rollouts,
-        demo_batch_size=512,
+        demo_batch_size=128,
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
