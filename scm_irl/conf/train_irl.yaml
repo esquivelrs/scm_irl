@@ -8,6 +8,8 @@ defaults:
   - env/env_cfg
   - shiptypes/tanker
 
+output_dir: './outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/model'
+
 policy: 'MlpPolicy' #MultiInputPolicy
 env_name: 'ScmIrl-v0'
 
@@ -16,7 +18,8 @@ multi_scenario: true
 scenarios_path: "../data/raw/"
 scenario_id: "113851c356" # In case multi_scenario: False
 mmsi: 100 # In case a single scenario is used and unique mmsi
-num_envs: 5
+num_envs: 2
+
 
 # override env parameters
 # env_params:
@@ -28,8 +31,10 @@ resnet_wrapper: true
 
 # irl parameters
 irl_params:
-  min_expert_demos: 5
+  min_expert_demos: 2
+  num_eval_episodes: 5
   demo_batch_size: 64
-  total_timesteps: 400_000
+  total_timesteps: 20_000
+  num_checkpoints: 10 # save model total_timesteps/num_checkpoints times
   learner_batch_size: 64
   learner_lr: 0.0004

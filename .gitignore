@@ -119,4 +119,4 @@ scripts/wandb/*
 scripts/runs/*
 scripts/videos/*
 outputs/*
-scripts/outputs
+scripts/outputs/*

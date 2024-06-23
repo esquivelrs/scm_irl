@@ -1,10 +1,10 @@
 # Environment configuration
 bicycle_model: false
-copy_expert: true
+copy_expert: false
 dist_metric: l2
 start_time_random: false
 start_pos_random: false
-observation_matrix: true
+observation_matrix: false
 
 # Environment parameters
 sog_scale: 40 #13

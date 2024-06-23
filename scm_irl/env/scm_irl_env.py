@@ -242,14 +242,7 @@ class ScmIrlEnv(gym.Env):
 
 
     def _get_obs(self):
-        observation_matrix = self._get_observation_matrix()
-
-        if observation_matrix is not None and not np.isnan(observation_matrix).any():
-            self.observation_matrix = observation_matrix
-            # scale channel 0 and 1 to 255
-            self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
-            self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
-        
+        terminate = False
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
@@ -274,9 +267,20 @@ class ScmIrlEnv(gym.Env):
         #obs = {'agent_state': agent_obs}
 
         if self.cfg['env']['observation_matrix']:
+            observation_matrix = self._get_observation_matrix()
+
+            if observation_matrix is not None and not np.isnan(observation_matrix).any():
+                self.observation_matrix = observation_matrix
+                # scale channel 0 and 1 to 255
+                self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
+                self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
             obs = {'observation_matrix': self.observation_matrix,
                    'agent_state': agent2target,
                    'vessel_params' : self.vessel_params}
+
+            if (observation_matrix is not None and np.isnan(observation_matrix).any()):
+                terminate = True
+
         else:
             obs = {'agent_state': agent2target,
                    'vessel_params' : self.vessel_params}
@@ -289,11 +293,8 @@ class ScmIrlEnv(gym.Env):
         # add one level of nesting
         #obs = np.expand_dims(obs, axis=0)
 
-        terminate = False
-        if (observation_matrix is None or 
-            np.isnan(agent2target).any() or 
-            (observation_matrix is not None and np.isnan(observation_matrix).any())):
-            #print(f"######## NAN agent_obs: {agent2target}, observation_matrix: {observation_matrix}")
+        
+        if np.isnan(agent2target).any():
             terminate = True
 
         return obs, terminate

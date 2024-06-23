@@ -9,26 +9,33 @@ import numpy as np
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor, VecVideoRecorder, VecNormalize
 from imitation.data import rollout
 import datetime
 import os
+import pathlib
 
 from omegaconf import DictConfig
 import hydra
 from hydra import utils
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from scm_irl.utils.env_wrappers import FlatObservationWrapper
+from scm_irl.utils.env_wrappers import FlatObservationWrapper, ResNetObservationWrapper
 from imitation.util import util
 from imitation.policies.serialize import policy_registry
+from imitation.scripts.train_adversarial import save
 
 from imitation.algorithms.adversarial.gail import GAIL
+from imitation.algorithms.adversarial.airl import AIRL
 from imitation.rewards.reward_nets import BasicRewardNet
 from imitation.util.networks import RunningNorm
+from imitation.util import logger
+from imitation.data.wrappers import RolloutInfoWrapper
 from stable_baselines3 import PPO
 from stable_baselines3.ppo import MlpPolicy
 from stable_baselines3.common.evaluation import evaluate_policy
+from imitation.util import logger as imit_logger
+
 
 
 import gymnasium as gym
@@ -44,15 +51,19 @@ gym.register(
     max_episode_steps=1000,
 )
 
+def callback(round_num: int, /) -> None:
+    if checkpoint_interval > 0 and  round_num % checkpoint_interval == 0:
+        save(airl_trainer, pathlib.Path(f"checkpoints/checkpoint{round_num:05d}"))
+
 
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
 def train(cfg: DictConfig) -> None:
 
+    output_dir = os.path.join(utils.get_original_cwd(), cfg.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
     date_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     model_name = f"{cfg.model}_{cfg.irl_algo}_{cfg.lerner_algo}_{date_time}"
-
-    output_path = os.path.join("../outputs", model_name)
-    os.makedirs(output_path, exist_ok=True)
 
     data_path = os.path.join(utils.get_original_cwd(), cfg.scenarios_path)
     
@@ -61,9 +72,10 @@ def train(cfg: DictConfig) -> None:
     wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
     wandb.init(
         name=model_name,
-        dir=output_path,
+        dir=output_dir,
         config=wandb_cfg,
         sync_tensorboard=True,  # automatically upload SB3's tensorboard metrics to W&B
+        tensorboard=True,       # enable tensorboard
         project="scm_irl",
         monitor_gym=True,       # automatically upload gym environments' videos
         save_code=True,
@@ -87,21 +99,28 @@ def train(cfg: DictConfig) -> None:
                 scenario = Scenario(cfg, path_scenario)
                 for mmsi in scenario.get_valid_vessels():
                     dict_scenarios[f"{scenario_id}_{mmsi}"] = scenario
+            #print(len(dict_scenarios))
+            if len(dict_scenarios) >= cfg.num_envs:
+                break
 
 
-    def make_env(env_id, rank, dict_scenarios = {}, seed=0, list_scenarios = []):
+    def make_env(mode = '', cfg_env = None, rank = 0, dict_scenarios = {}, seed=0, list_scenarios = [], video_enable = False):
         def _init():
             scenario_id = list_scenarios[rank]
             scenario = dict_scenarios[scenario_id]
             mmsi = int(scenario_id.split("_")[-1])
-            env = ScmIrlEnv(cfg, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+            env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
 
-            print(env)
-            #env = FlatObservationWrapper(env)
+            #print(env)
+            if cfg_env['env']['observation_matrix'] and cfg_env['resnet_wrapper']:
+                env = ResNetObservationWrapper(env)
+            env = FlatObservationWrapper(env)
             #print(env.observation_space)
-            if rank == 0:  # only add the RecordVideo wrapper for the first environment
-                env = gym.wrappers.RecordVideo(env, f"{output_path}/videos")  # record videos
-            env = gym.wrappers.RecordEpisodeStatistics(env)  # record stats such as returns
+            if rank < 5 and video_enable:  # only add the RecordVideo wrapper for the first environment
+                env = gym.wrappers.RecordVideo(env, name_prefix=f"{mode}_{rank}", video_folder=f"{output_dir}/videos_{mode}")  # record videos
+            env = gym.wrappers.RecordEpisodeStatistics(env)  # rec0ord stats such as returns
+            # if mode == 'rollout':
+            #     env = RolloutInfoWrapper(env)  # record additional information in the rollout
             return env
         return _init
 
@@ -111,10 +130,12 @@ def train(cfg: DictConfig) -> None:
     if cfg.num_envs > num_scenarions_mmsi:
         raise ValueError("The number of environments is greater than the number of possible scenarios")
     
-    env = DummyVecEnv([make_env(cfg.env_name, rank=i, seed=SEED,
+    cfg_env = cfg.copy()
+    cfg_env['env']['copy_expert'] = True
+    env = DummyVecEnv([make_env(mode='rollout', cfg_env=cfg, rank=i, seed=SEED,
                                  dict_scenarios=dict_scenarios, 
                                  list_scenarios=list_vessels_scenarios) for i in range(cfg.num_envs)])
-        
+    env = VecMonitor(env)
     print("############# Registered")
 
 
@@ -130,15 +151,7 @@ def train(cfg: DictConfig) -> None:
                 action = env.unwrapped.get_action_from_vessel(timestep)
                 actions.append(action)
                 states.append(None)
-            # print("Action")
-            # timestep = env.timestep
 
-            # # Get the action from the vessel
-            # action = env.get_action_from_vessel(timestep)
-            # actions.append(action)
-            # states.append(None)
-
-            #print(actions)
             return actions, states
 
         return policy_fn
@@ -164,8 +177,8 @@ def train(cfg: DictConfig) -> None:
         exclude_infos=True,
         verbose=True,
     )
-    # print("Rollouts")
-    # print(rollouts)
+
+    #Rollout stats: {'n_traj': 2, 'return_min': 366.53949785232544, 'return_mean': 371.7009838819504, 'return_std': 5.161486029624939, 'return_max': 376.8624699115753, 'len_min': 148, 'len_mean': 148.0, 'len_std': 0.0, 'len_max': 148}
 
     print("############# learner")
     learner = PPO(
@@ -177,7 +190,7 @@ def train(cfg: DictConfig) -> None:
         gamma=0.95,
         n_epochs=5,
         seed=SEED,
-        tensorboard_log=f"{output_path}/algo",
+        tensorboard_log='./summary',
         verbose=1,
     )
 
@@ -187,40 +200,68 @@ def train(cfg: DictConfig) -> None:
         action_space=env.action_space,
         normalize_input_layer=RunningNorm,
     )
+    # Create a WandbOutputFormat instance
+    wandb_format = imit_logger.WandbOutputFormat()
+
+
+    custom_logger = imit_logger.configure(
+        folder=output_dir,
+        format_strs=["tensorboard", "stdout", "wandb"],
+    )
 
     print("############# gail_trainer")
-    gail_trainer = GAIL(
+    trainer = AIRL(
         demonstrations=rollouts,
-        demo_batch_size=1024,
+        demo_batch_size=cfg['irl_params']['demo_batch_size'],
         gen_replay_buffer_capacity=512,
         n_disc_updates_per_round=8,
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
         allow_variable_horizon=True,
+        init_tensorboard = True,
+        init_tensorboard_graph = True,
+        log_dir = './summary',
+        custom_logger=custom_logger,
     )
 
-    print("############# evaluate_policy")
-    learner_rewards_before_training, _ = evaluate_policy(
-        learner, env, 5, return_episode_rewards=True)
-    
-    print("Rewards before training")
-    print(learner_rewards_before_training)
+    checkpoint_interval = cfg['irl_params']['total_timesteps'] // cfg['irl_params']['num_checkpoints']
+    def callback(round_num: int, /) -> None:
+        if checkpoint_interval > 0 and  round_num % checkpoint_interval == 0:
+            save(trainer, pathlib.Path(os.path.join(output_dir, f"checkpoints/checkpoint_{round_num:05d}")))
 
-    gail_trainer.train(cfg['irl_params']['total_timesteps'])
+
+    print("############# Train")
+    trainer.train(cfg['irl_params']['total_timesteps'], callback=callback)
+
+
+    print("############# Save")
+    save(trainer, pathlib.Path(os.path.join(output_dir, f"checkpoints/checkpointFinal")))
+
+
+    cfg_env = cfg.copy()
+    cfg_env['env']['copy_expert'] = False
+    env_post = DummyVecEnv([make_env(mode='post', cfg_env=cfg_env, rank=i, seed=SEED,
+                                 dict_scenarios=dict_scenarios, 
+                                 list_scenarios=list_vessels_scenarios, video_enable = True) for i in range(cfg.num_envs)])
+
+    env_post = VecMonitor(env_post)
 
     learner_rewards_after_training, _ = evaluate_policy(
-        learner, env, 5, return_episode_rewards=True)
+        learner, env_post, cfg['irl_params']['num_eval_episodes'], return_episode_rewards=True)
     
     print("Rewards after training")
     print(learner_rewards_after_training)
+    
+    #learner_rewards_after_training = [-8.620693003417047, -8.620693003417047, 5.2321647564718194, 5.2321647564718194, 5.2321647564718194]
+    wandb.log({"final_performance": np.mean(learner_rewards_after_training)})
 
-    wandb.log({"Rewards after training": learner_rewards_after_training})
 
     # At the end of your script, optionally
     wandb.finish()
 
 
+
+
 if __name__ == "__main__":
     train()
-

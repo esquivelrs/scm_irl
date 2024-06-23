@@ -1,3 +1,0 @@
-policy: MultiInputPolicy
-total_timesteps: 70000
-env_name: ScmIrl-v0
