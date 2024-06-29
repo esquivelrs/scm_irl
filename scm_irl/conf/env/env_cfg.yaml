@@ -16,6 +16,7 @@ vessel_types_max: 5
 resolution: 5
 awareness_zone: [200, 500, 200, 200]
 
+
 # valid vessels
 valid_vessels: ['Cargo', 'Tanker']
 

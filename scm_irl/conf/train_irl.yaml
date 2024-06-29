@@ -1,5 +1,6 @@
 model: 'scm_irl'
 
+
 irl_algo: 'gail'
 lerner_algo: 'ppo'
 
@@ -38,3 +39,4 @@ irl_params:
   num_checkpoints: 10 # save model total_timesteps/num_checkpoints times
   learner_batch_size: 64
   learner_lr: 0.0004
+
