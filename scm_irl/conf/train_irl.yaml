@@ -1,4 +1,5 @@
-model_name: 'scm_irl'
+model: 'scm_irl'
+
 
 irl_algo: 'gail'
 lerner_algo: 'ppo'
@@ -8,17 +9,34 @@ defaults:
   - env/env_cfg
   - shiptypes/tanker
 
+output_dir: './outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}/model'
+
 policy: 'MlpPolicy' #MultiInputPolicy
-total_timesteps: 10
 env_name: 'ScmIrl-v0'
 
 # multi scenario
-multi_scenario: False
+multi_scenario: true
 scenarios_path: "../data/raw/"
-scenario_name: "scenario_2a66ceaf61" # In case multi_scenario: False
-number_envs: 1
+scenario_id: "113851c356" # In case multi_scenario: False
+mmsi: 100 # In case a single scenario is used and unique mmsi
+num_envs: 60
 
 
+# override env parameters
+# env_params:
+#   copy_expert: true
+#   start_time_random: false
+#   observation_matrix: false
 
+resnet_wrapper: true
 
-# add nodes from ./env/nodes.yaml
+# irl parameters
+irl_params:
+  min_expert_demos: 60
+  num_eval_episodes: 50
+  demo_batch_size: 4096
+  total_timesteps: 4_000_000
+  num_checkpoints: 10 # save model total_timesteps/num_checkpoints times
+  learner_batch_size: 64
+  learner_lr: 0.0004
+

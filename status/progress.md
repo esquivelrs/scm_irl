@@ -177,3 +177,18 @@ Reward: `-distance_position -cog_diff -sog_diff`
 - Add imitation framework.
 - Add wandb.
 - Reading material - AIRL: https://arxiv.org/pdf/1710.11248
+
+---
+## Week 22 - 28-05-2024
+Imitation learning framework integrated (Rollout Trajectories).
+Hydra & wandb integrated.
+Backbone wrapper (Resnet18)
+
+![center width:600px](image-20.png)
+
+---
+
+## Next Steps
+- Create test/evaluation function.
+- Multi env wrapper.
+- Training process...

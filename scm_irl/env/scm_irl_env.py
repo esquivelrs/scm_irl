@@ -1,3 +1,10 @@
+"""
+File: scm_irl_env.py
+Author: Rolando Esquivel Sancho
+Description: 
+"""
+
+
 import gymnasium as gym
 import numpy as np
 import pygame
@@ -34,31 +41,66 @@ def modulate_color(color, modulation):
 class ScmIrlEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, cfg=None, scenario_path=None, render_mode=None, start_time_reference=None, end_time_override=None, mmsi=None, mmsi_in_collision=False, awareness_zone = [1000, 1000, 1000, 1000], resolution=1, dict_scenarios={}):
+    def __init__(self, cfg=None, scenario = None, render_mode = None, 
+                 start_time_reference = None, end_time_override = None, 
+                 mmsi = None, mmsi_in_collision = False, 
+                 awareness_zone = [1000, 1000, 1000, 1000], resolution = 1):
+        """
+        Initializes the environment with the given configuration and scenario.
+
+        Parameters:
+            cfg (dict, optional): Configuration dictionary containing environment settings. Defaults to None.
+            scenario (Scenario, optional): An instance of a Scenario class or similar, containing the specific scenario data. Defaults to None.
+            render_mode (str, optional): Specifies the mode of rendering (e.g., 'human', 'rgb_array'). Defaults to None.
+            start_time_reference (int, optional): The start time of the simulation. If None, the simulation starts at the first available time. Defaults to None.
+            end_time_override (int, optional): Allows overriding the calculated end time of the simulation. Defaults to None.
+            mmsi (int, optional): The Maritime Mobile Service Identity (MMSI) number of the vessel to focus on in the simulation. Defaults to None.
+            mmsi_in_collision (bool, optional): Flag indicating whether to filter vessels based on collision status. Defaults to False.
+            awareness_zone (list of int, optional): Specifies the dimensions of the awareness zone around the vessel. Defaults to [1000, 1000, 1000, 1000].
+            resolution (int, optional): The resolution of the simulation. Defaults to 1.
+
+        Initializes various attributes used in the simulation, such as vessel parameters, time steps, observation and action spaces, and rendering settings. It also processes the scenario to extract relevant data like vessel metadata, start and end times, and constructs the observation matrix based on the scenario and configuration.
+
+        Note:
+            - The `cfg` dictionary must contain keys for 'env' settings, including 'sog_scale', 'cog_scale', 'bicycle_model', 'copy_expert', 'dist_metric', 'start_time_random', and 'start_pos_random'.
+            - The `scenario` parameter is expected to have methods for retrieving vessel metadata, states, and collision information, as well as methods for getting nodes and ways for navigation.
+        """        
         self.cfg = cfg
         self.episode_number = 0
         self.render_mode = render_mode
 
-        self.scenario_path = scenario_path
+        #self.scenario_path = scenario_path
 
-        self.scenario = Scenario(cfg, scenario_path)
+        #self.scenario = Scenario(cfg, scenario_path)
+        self.scenario = scenario
 
-        self.sampling_time = self.scenario.sampling_time
-
+        #self.sampling_time = self.scenario.sampling_time # TODO: clean data set, some scenarios have different value in sampling scenario_44d051b172
+        self.sampling_time = 10
         mmsis = []
         if mmsi_in_collision:
             mmsis = self.scenario.collision_mmsis
         else:
             mmsis = self.scenario.mmsis
-            
-
-        if mmsi is None:
-            mmsi = self.select_valid_mmsi(mmsis, scenario_path, dict_scenarios, self.cfg)
+                    
+        mmsi = self.select_valid_mmsi(mmsis, mmsi, self.cfg)
 
         self.mmsi = mmsi # Return None if no valid mmsi is found
 
+        # TODO: clean this part of the code --> if redundant
+
         if self.mmsi in mmsis:
             self.vessel_metadata = self.scenario.get_vessel_metadata(self.mmsi)
+
+
+            # TODO: Change this to support multiple vessels types
+            vessel_type = 0 
+            if self.vessel_metadata.ship_type == 'Tanker':
+                vessel_type = 1 
+
+            self.vessel_params = np.array([self.vessel_metadata.width, 
+                                           self.vessel_metadata.length, 
+                                           self.vessel_metadata.draught, 
+                                           self.vessel_metadata.nav_status, vessel_type])
 
             if start_time_reference is None:
                 self.start_time = next(iter(self.scenario.vessels[mmsi]['states']))
@@ -67,7 +109,7 @@ class ScmIrlEnv(gym.Env):
 
             self.timestep = self.start_time
 
-            self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) 
+            self.end_time = next(reversed(self.scenario.vessels[mmsi]['states'])) - 2 * self.sampling_time
             if end_time_override is not None:
                 self.end_time = end_time_override
             
@@ -124,8 +166,20 @@ class ScmIrlEnv(gym.Env):
             #     'expert_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
             #     'target': spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
             # })
-            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float64)
+            #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float64)
             #self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float64)
+
+            if cfg['env']['observation_matrix']:
+                self.observation_space = spaces.Dict({
+                    'observation_matrix': spaces.Box(low=0, high=255, shape=self.observation_matrix.shape, dtype=np.float32),
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
+            else:
+                self.observation_space = spaces.Dict({
+                    'agent_state': spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32),
+                    'vessel_params': spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+                })
 
 
             self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
@@ -142,28 +196,43 @@ class ScmIrlEnv(gym.Env):
             self.clock = None
 
 
-    def select_valid_mmsi(self, mmsis, scenario_path, dict_scenarios, cfg):
+    def select_valid_mmsi(self, mmsis, mmsi, cfg):
+        """
+        Selects a valid Maritime Mobile Service Identity (MMSI) from a list of MMSIs based on the ship type being among the valid vessels defined in the configuration.
 
+        This method filters the given list of MMSIs to include only those that correspond to ship types listed as valid in the configuration. If a specific MMSI is provided, it checks whether this MMSI is valid and returns it if so. If no specific MMSI is provided or the provided MMSI is not valid, it randomly selects a valid MMSI from the filtered list.
+
+        Parameters:
+            mmsis (list of int): The list of MMSIs to filter.
+            mmsi (int): A specific MMSI to check for validity. If None or 0, a valid MMSI is randomly selected from the filtered list.
+            cfg (dict): The configuration dictionary that contains 'env' settings, including 'valid_vessels' which lists valid ship types.
+
+        Returns:
+            int or None: A valid MMSI if one is found and meets the criteria; otherwise, None.
+
+        Raises:
+            None
+
+        Note:
+            - The method prints a message if no valid MMSIs are found in the scenario or if the provided MMSI is not valid.
+            - The scenario object (self.scenario) is used to retrieve vessel metadata for filtering MMSIs based on ship type.
+        """
         # Filter MMSIs based on ship type being in valid vessels
         valid_mmsis = [mmsi for mmsi in mmsis if self.scenario.get_vessel_metadata(mmsi).ship_type in cfg['env']['valid_vessels']]
         
         if not valid_mmsis:
-            print(f"no valid mmsi in the scenario {scenario_path}")
+            print(f"no valid mmsi in the scenario {self.scenario}")
             return None
 
-        # Exclude already used MMSIs if dict_scenarios is provided
-        if self.scenario.scenario_id not in dict_scenarios:
-            return np.random.choice(valid_mmsis)
-        
-        mmsi_used = dict_scenarios.get(self.scenario.scenario_id, [])
-        remaining_mmsis = [mmsi for mmsi in valid_mmsis if mmsi not in mmsi_used]
-        
-        if not remaining_mmsis:
-            print(f"no more mmsi to use in the scenario {scenario_path}")
-            return None
+        if mmsi is not None or mmsi != 0:
+            if mmsi in valid_mmsis:
+                return mmsi
+            else:
+                print(f"mmsi {mmsi} is not valid in the scenario {self.scenario}")
+                return None
 
-        # Randomly select from the remaining valid MMSIs
-        return np.random.choice(remaining_mmsis)     
+        return np.random.choice(valid_mmsis)
+  
     
     def scale_coords(self, coords, north_min, north_max, east_min, east_max, height, width):
         north_range = north_max - north_min
@@ -217,20 +286,14 @@ class ScmIrlEnv(gym.Env):
 
 
     def _get_obs(self):
-        observation_matrix = self._get_observation_matrix()
-
-        if not np.isnan(observation_matrix).any():
-            self.observation_matrix = observation_matrix
-            # scale channel 0 and 1 to 255
-            self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
-            self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
-        
+        terminate = False
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         expert_obs = np.array([expert_state.lat, expert_state.lon, expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
         # expert_action = np.array([expert_state.sog/self.sog_scale, expert_state.cog/self.cog_scale])
+
         
-        agent_obs = self.scenario.relative_state(expert_state, self.agent_state)
-        agent_obs = np.array([agent_obs.lat, agent_obs.lon, agent_obs.sog, agent_obs.cog])
+        agent2target = self.scenario.relative_state(self.agent_final_location, self.agent_state)
+        agent2target = np.array([agent2target.lat, agent2target.lon, agent2target.sog, agent2target.cog])
         # print(f"agent_obs {agent_obs}")
         # print(f"expert_obs {expert_obs}")
 
@@ -245,54 +308,72 @@ class ScmIrlEnv(gym.Env):
         #         'expert_state': expert_obs,
         #         'target': target_state}
       
-        obs = {'agent_state': agent_obs, 
-                'target': target_state}
+        #obs = {'agent_state': agent_obs}
+
+        if self.cfg['env']['observation_matrix']:
+            observation_matrix = self._get_observation_matrix()
+
+            if observation_matrix is not None and not np.isnan(observation_matrix).any():
+                self.observation_matrix = observation_matrix
+                # scale channel 0 and 1 to 255
+                self.observation_matrix[:,:,0] = self.observation_matrix[:,:,0] * 255 / self.cfg['env']['vessel_types_max']
+                self.observation_matrix[:,:,1] = self.observation_matrix[:,:,1] * 255 / self.cfg['env']['seamark_max']
+            obs = {'observation_matrix': self.observation_matrix,
+                   'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
+
+            if (observation_matrix is not None and np.isnan(observation_matrix).any()):
+                terminate = True
+
+        else:
+            obs = {'agent_state': agent2target,
+                   'vessel_params' : self.vessel_params}
         #obs = {'expert_action': expert_action}
 
-        transformed_obs_values = [np.array(v) for v in obs.values()]
+        #transformed_obs_values = [np.array(v) for v in obs.values()]
 
         # Concatenate all values into a single vector
-        obs = np.concatenate(transformed_obs_values)
+        # obs = np.concatenate(transformed_obs_values)
         # add one level of nesting
         #obs = np.expand_dims(obs, axis=0)
 
-        terminate = False
-        if self.observation_matrix is None or np.isnan(agent_obs).any() or np.isnan(observation_matrix).any():
-            print(f"######## NAN agent_obs: {agent_obs}, observation_matrix: {observation_matrix}")
+        
+        if np.isnan(agent2target).any():
             terminate = True
 
         return obs, terminate
  
-    def _compute_reward(self):
+    def calculate_reward(self):
         # compute the 
         expert_state = self.scenario.get_vessel_state_time(self.mmsi, self.timestep)
         # compute the distance between the expert and the agent
         
-        if self.dist_metric == "l2":
-            pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
-        elif self.dist_metric == "l1":
-            pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
-        else:
-            raise ValueError(f"dist_metric {self.dist_metric} is not valid")
-        
-        # print(f"pos_error {pos_error}")
-               
-        #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
-        cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
-        #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
-        sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
+        if self.cfg['env']['ate_xte_metric']:
+            ate = (self.agent_state.lat - expert_state.lat)*np.cos(expert_state.cog) + (self.agent_state.lon - expert_state.lon)*np.sin(expert_state.cog)
+            xte = -(self.agent_state.lat - expert_state.lat)*np.sin(expert_state.cog) + (self.agent_state.lon - expert_state.lon)*np.cos(expert_state.cog)
+            #print(f"ATE: {ate}, XTE: {xte}")
+            reward =  np.exp(-np.abs(ate)) + np.exp(-np.abs(xte))
+        else:     
+            if self.dist_metric == "l2":
+                pos_error = np.sqrt((expert_state.lat - self.agent_state.lat)**2 + (expert_state.lon - self.agent_state.lon)**2)
+            elif self.dist_metric == "l1":
+                pos_error = np.abs(expert_state.lat - self.agent_state.lat) + np.abs(expert_state.lon - self.agent_state.lon)
+            else:
+                raise ValueError(f"dist_metric {self.dist_metric} is not valid")
+            
+            #distance_to_target = np.sqrt((self.agent_final_location.lat - self.agent_state.lat)**2 + (self.agent_final_location.lon - self.agent_state.lon)**2)
+            cog_diff = np.abs(expert_state.cog - self.agent_state.cog)
+            #cog_diff = np.minimum(cog_diff, 2*np.pi - cog_diff)
+            sog_diff = np.abs(expert_state.sog - self.agent_state.sog)
+            pos_reward = np.exp(-pos_error * self.cfg['env']['reward_pos'])   
+            
+            reward = pos_reward + pos_reward * (np.exp(- cog_diff) + np.exp(- sog_diff))
 
-        pos_reward = np.exp(-pos_error * self.cfg['env']['reward_pos']) 
-
-        reward = pos_reward + pos_reward * (np.exp(- cog_diff) + np.exp(- sog_diff))
-        # print(f"reward {reward}")
-        #print(f"timestep {self.timestep}, reward: {reward}, pos_error: {pos_error}, expert_state: {expert_state}, agent_state: {self.agent_state}")
-        #reward = - pos_error
 
         #print(f"pos_error {pos_error} : {np.exp(- pos_error/10000)}, cog_diff: {cog_diff}, sog_diff: {sog_diff}")
         if np.isnan(reward):
             print("reward is nan")
-            reward = -1
+            reward = 0
             
 
         return reward
@@ -304,7 +385,7 @@ class ScmIrlEnv(gym.Env):
         self._pre_step()
         
         obs, term = self._get_obs()
-        self.reward = self._compute_reward()
+        self.reward = self.calculate_reward()
 
 
 
@@ -316,8 +397,8 @@ class ScmIrlEnv(gym.Env):
             or term):
             self.truncated = False
             self.terminate = True
-            print("agent out of the scenario")
-            self.reward = -10
+            # print("agent out of the scenario")
+            # self.reward = -10
         elif self.timestep >= self.end_time:
             self.truncated = True
             self.terminate = True
@@ -707,19 +788,11 @@ class ScmIrlEnv(gym.Env):
         vessel_polygon = rotate(Polygon(vertices), 90 - vessel_states.cog*180/np.pi, origin=(x, y))
         return vessel_polygon
 
-    def _render_full_seachart(self):
-        pass
-
-
-
     def close(self):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
-        
-    def load_trajectories(self, scenario_path):
-        pass
-    
-    def calculate_reward(self, action):
-        pass
-    
+
+       
+    def __str__(self):
+        return f"Scenario_id: {self.scenario.scenario_id}, mmsi {self.mmsi}"

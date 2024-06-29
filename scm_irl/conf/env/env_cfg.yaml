@@ -1,19 +1,25 @@
 # Environment configuration
-bicycle_model: false
+bicycle_model: true
 copy_expert: false
+ate_xte_metric: true # Along Track Error and Cross Track Error if true it is used as reward
 dist_metric: l2
 start_time_random: false
 start_pos_random: false
+observation_matrix: false
 
 # Environment parameters
-sog_scale: 20 #13
-cog_scale: 2
+sog_scale: 13 #13
+cog_scale: 1
 depth_max: 100
 seamark_max: 50
 vessel_types_max: 5
+resolution: 5
+awareness_zone: [200, 500, 200, 200]
+
 
 # valid vessels
 valid_vessels: ['Cargo', 'Tanker']
 
 # scale reward
 reward_pos: 0.01
+

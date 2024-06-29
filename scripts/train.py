@@ -6,7 +6,7 @@ import hydra
 from hydra import utils
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
-from stable_baselines3 import PPO, A2C
+from stable_baselines3 import PPO, SAC, DDPG, TD3, A2C
 from stable_baselines3.common.vec_env import DummyVecEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -38,7 +38,7 @@ def train(cfg: DictConfig) -> None:
         def _init():
             path = "../data/raw/scenario_113851c356" # scenario_2a66ceaf61 scenario_113851c356
             path = os.path.join(utils.get_original_cwd(), path)
-            env = ScmIrlEnv(cfg, path, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+            env = ScmIrlEnv(cfg, path, mmsi=215811000, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
             #env = FlatObservationWrapper(env)
             print(env.observation_space)
             if rank == 0:  # only add the RecordVideo wrapper for the first environment
