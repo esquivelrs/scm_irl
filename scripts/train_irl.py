@@ -109,7 +109,8 @@ def train(cfg: DictConfig) -> None:
             scenario_id = list_scenarios[rank]
             scenario = dict_scenarios[scenario_id]
             mmsi = int(scenario_id.split("_")[-1])
-            env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = [200, 500, 200, 200], render_mode="rgb_array")
+            env = ScmIrlEnv(cfg_env, scenario, mmsi=mmsi, awareness_zone = cfg_env['env']['awareness_zone'],
+                             render_mode="rgb_array", resolution=cfg_env['env']['resolution'])
 
             #print(env)
             if cfg_env['env']['observation_matrix'] and cfg_env['resnet_wrapper']:
