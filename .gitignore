@@ -122,6 +122,7 @@ outputs/*
 scripts/outputs/*
 hpc/outputs/*
 
+
 # HPC
 hpc/*.err
 hpc/*.out
