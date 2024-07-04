@@ -5,7 +5,7 @@ ate_xte_metric: true # Along Track Error and Cross Track Error if true it is use
 dist_metric: l2
 start_time_random: false
 start_pos_random: false
-observation_matrix: false
+observation_matrix: true
 
 # Environment parameters
 sog_scale: 13 #13
@@ -18,7 +18,7 @@ awareness_zone: [200, 500, 200, 200]
 
 
 # valid vessels
-valid_vessels: ['Cargo', 'Tanker']
+valid_vessels: ['Cargo', 'Tanker', 'Passenger']
 
 # scale reward
 reward_pos: 0.01
