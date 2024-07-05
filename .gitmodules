@@ -1,0 +1,5 @@
+[submodule "ai-navigator-python-library"]
+	path = ai-navigator-python-library
+	url = https://gitlab.gbar.dtu.dk/dtu-asl/research-projects/ai-navigator/code/ai-navigator-python-library.git
+	branch = fix/scm_s230025
+
