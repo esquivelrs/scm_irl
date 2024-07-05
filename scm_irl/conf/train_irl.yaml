@@ -18,7 +18,7 @@ multi_scenario: true
 scenarios_path: "../data/raw/"
 scenario_id: "113851c356" # In case multi_scenario: False
 mmsi: 100 # In case a single scenario is used and unique mmsi
-num_envs: 60
+num_envs: 15
 
 
 # override env parameters
@@ -27,14 +27,14 @@ num_envs: 60
 #   start_time_random: false
 #   observation_matrix: false
 
-resnet_wrapper: true
+resnet_wrapper: false
 
 # irl parameters
 irl_params:
-  min_expert_demos: 60
-  num_eval_episodes: 50
-  demo_batch_size: 4096
+  min_expert_demos: 15
+  num_eval_episodes: 15
+  demo_batch_size: 1024
   total_timesteps: 4_000_000
   num_checkpoints: 10 # save model total_timesteps/num_checkpoints times
   learner_batch_size: 64
-  learner_lr: 0.0004
+  learner_lr: 0.0008

@@ -124,6 +124,8 @@ hpc/outputs/*
 
 
 # HPC
+hpc/outputs/*
+hpc/Output/*
 hpc/*.err
 hpc/*.out
 *.err
