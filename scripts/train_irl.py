@@ -52,12 +52,24 @@ gym.register(
 )
 
 def callback(round_num: int, /) -> None:
+    """
+    Callback function to save checkpoints during training.
+
+    Args:
+    - round_num (int): Current training round number.
+    """
     if checkpoint_interval > 0 and  round_num % checkpoint_interval == 0:
-        save(airl_trainer, pathlib.Path(f"checkpoints/checkpoint{round_num:05d}"))
+        save(trainer, pathlib.Path(f"checkpoints/checkpoint{round_num:05d}"))
 
 
 @hydra.main(config_path="../scm_irl/conf", config_name="train_irl")
 def train(cfg: DictConfig) -> None:
+    """
+    Main function for training the reinforcement learning model with imitation learning.
+
+    Args:
+    - cfg (DictConfig): Hydra configuration object containing training parameters.
+    """
 
     output_dir = os.path.join(utils.get_original_cwd(), cfg.output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -105,6 +117,21 @@ def train(cfg: DictConfig) -> None:
 
 
     def make_env(mode = '', cfg_env = None, rank = 0, dict_scenarios = {}, seed=0, list_scenarios = [], video_enable = False):
+        """
+        Function to create a Gym environment instance.
+
+        Args:
+        - mode (str): Mode of the environment ('rollout' or 'post').
+        - cfg_env (dict): Configuration dictionary for the environment.
+        - rank (int): Rank of the environment instance.
+        - dict_scenarios (dict): Dictionary of scenarios.
+        - seed (int): Seed for random number generation.
+        - list_scenarios (list): List of scenario identifiers.
+        - video_enable (bool): Whether to enable video recording.
+
+        Returns:
+        - env (gym.Env): Initialized Gym environment instance.
+        """
         def _init():
             scenario_id = list_scenarios[rank]
             scenario = dict_scenarios[scenario_id]
@@ -140,7 +167,7 @@ def train(cfg: DictConfig) -> None:
     print("############# Registered")
 
 
-    def load_policy(policy_name, organization, env_name, venv):
+    def load_policy(venv):
         def policy_fn(obs, state, dones):
             actions = []
             states = []
@@ -160,15 +187,10 @@ def train(cfg: DictConfig) -> None:
     #policy_registry.register("my-policy", load_policy)
 
     print("############# Load Policy")
-    expert = load_policy(
-        "copy_action",
-        organization="scm",
-        env_name="ScmIrl-v0",
-        venv=env,
-    )
+    expert = load_policy(venv=env)
 
 
-    print("############# rollouts")
+    # Generate rollouts using the expert policy
     rollouts = rollout.rollout(
         expert,
         env,
@@ -179,9 +201,7 @@ def train(cfg: DictConfig) -> None:
         verbose=True,
     )
 
-    #Rollout stats: {'n_traj': 2, 'return_min': 366.53949785232544, 'return_mean': 371.7009838819504, 'return_std': 5.161486029624939, 'return_max': 376.8624699115753, 'len_min': 148, 'len_mean': 148.0, 'len_std': 0.0, 'len_max': 148}
-
-    print("############# learner")
+    # Initialize the reinforcement learning algorithm trainer (PPO)
     learner = PPO(
         env=env,
         policy=MlpPolicy,
@@ -195,22 +215,21 @@ def train(cfg: DictConfig) -> None:
         verbose=1,
     )
 
-    print("############# reward_net")
+    # Initialize reward network for the reward-based IRL algorithm
     reward_net = BasicRewardNet(
         observation_space=env.observation_space,
         action_space=env.action_space,
         normalize_input_layer=RunningNorm,
     )
-    # Create a WandbOutputFormat instance
+
+    # Configure logger for WandB
     wandb_format = imit_logger.WandbOutputFormat()
-
-
     custom_logger = imit_logger.configure(
         folder=output_dir,
         format_strs=["tensorboard", "stdout", "wandb"],
     )
 
-    print("############# trainer")
+    # Initialize trainer based on selected IRL algorithm (GAIL or AIRL)
     if cfg.irl_algo == "gail":
         trainer = GAIL(
             demonstrations=rollouts,
@@ -221,9 +240,9 @@ def train(cfg: DictConfig) -> None:
             gen_algo=learner,
             reward_net=reward_net,
             allow_variable_horizon=True,
-            init_tensorboard = True,
-            init_tensorboard_graph = True,
-            log_dir = './summary',
+            init_tensorboard=True,
+            init_tensorboard_graph=True,
+            log_dir='./summary',
             custom_logger=custom_logger,
         )
     elif cfg.irl_algo == "airl":
@@ -236,49 +255,54 @@ def train(cfg: DictConfig) -> None:
             gen_algo=learner,
             reward_net=reward_net,
             allow_variable_horizon=True,
-            init_tensorboard = True,
-            init_tensorboard_graph = True,
-            log_dir = './summary',
+            init_tensorboard=True,
+            init_tensorboard_graph=True,
+            log_dir='./summary',
             custom_logger=custom_logger,
         )
 
+    # Calculate checkpoint interval
     checkpoint_interval = cfg['irl_params']['total_timesteps'] // cfg['irl_params']['num_checkpoints']
+
+    # Callback function to save checkpoints during training
     def callback(round_num: int, /) -> None:
+        """
+        Callback function to save checkpoints during training.
+
+        Args:
+        - round_num (int): Current training round number.
+        """
         if checkpoint_interval > 0 and  round_num % checkpoint_interval == 0:
             save(trainer, pathlib.Path(os.path.join(output_dir, f"checkpoints/checkpoint_{round_num:05d}")))
 
-
-    print("############# Train")
+    # Train the IRL algorithm
     trainer.train(cfg['irl_params']['total_timesteps'], callback=callback)
 
-
-    print("############# Save")
+    # Save final trained model
     save(trainer, pathlib.Path(os.path.join(output_dir, f"checkpoints/checkpointFinal")))
 
-
+    # Configure environment settings for post-training evaluation
     cfg_env = cfg.copy()
     cfg_env['env']['copy_expert'] = False
     env_post = DummyVecEnv([make_env(mode='post', cfg_env=cfg_env, rank=i, seed=SEED,
-                                 dict_scenarios=dict_scenarios, 
-                                 list_scenarios=list_vessels_scenarios, video_enable = True) for i in range(cfg.num_envs)])
-
+                                     dict_scenarios=dict_scenarios, 
+                                     list_scenarios=list_vessels_scenarios, video_enable=True) for i in range(cfg.num_envs)])
     env_post = VecMonitor(env_post)
 
+    # Evaluate learner's performance after training
     learner_rewards_after_training, _ = evaluate_policy(
         learner, env_post, cfg['irl_params']['num_eval_episodes'], return_episode_rewards=True)
     
     print("Rewards after training")
     print(learner_rewards_after_training)
     
-    #learner_rewards_after_training = [-8.620693003417047, -8.620693003417047, 5.2321647564718194, 5.2321647564718194, 5.2321647564718194]
+    # Log final performance to WandB
     wandb.log({"final_performance": np.mean(learner_rewards_after_training)})
 
-
-    # At the end of your script, optionally
+    # Finish logging with WandB
     wandb.finish()
 
 
-
-
+# Entry point to start training
 if __name__ == "__main__":
     train()
