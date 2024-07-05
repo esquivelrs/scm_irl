@@ -12,6 +12,7 @@ Inverse rl applied to navigation of marine autonomous robots
 
 ## Installation
 
+
 prerequisites:
 ```bash
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
@@ -42,16 +43,3 @@ can guide you through the process.
 - [ ] Add Test
 
 
-## Credits
-
-
-
-Scenarios with issues:
-a5e67220a3
-231670000
-1577895600.0
-
-
-49453e6df7
-45793dde28
-6383ab3b42
